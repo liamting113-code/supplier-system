@@ -10,27 +10,39 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
         import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
-        import { getFirestore, collection, doc, setDoc, getDocs, onSnapshot, query, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+        import { getFirestore, collection, doc, addDoc, getDocs, onSnapshot, query, deleteDoc, updateDoc, writeBatch, where, orderBy } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 
+        // 你的 Firebase Config
         const firebaseConfig = {
-  apiKey: "AIzaSyCSiZp1Hi190zR-fzP_B8JoftTjFHC8dSs",
-  authDomain: "supplier-system-60c1b.firebaseapp.com",
-  databaseURL: "https://supplier-system-60c1b-default-rtdb.firebaseio.com",
-  projectId: "supplier-system-60c1b",
-  storageBucket: "supplier-system-60c1b.firebasestorage.app",
-  messagingSenderId: "101078681344",
-  appId: "1:101078681344:web:34933bff027e79d0f1d5e5",
-  measurementId: "G-D0P8QGW3X9"
-};
+            apiKey: "AIzaSyCSiZp1Hi190zR-fzP_B8JoftTjFHC8dSs",
+            authDomain: "supplier-system-60c1b.firebaseapp.com",
+            databaseURL: "https://supplier-system-60c1b-default-rtdb.firebaseio.com",
+            projectId: "supplier-system-60c1b",
+            storageBucket: "supplier-system-60c1b.firebasestorage.app",
+            messagingSenderId: "101078681344",
+            appId: "1:101078681344:web:34933bff027e79d0f1d5e5",
+            measurementId: "G-D0P8QGW3X9"
+        };
 
-        let db, auth;
-        const isFirebaseReady = firebaseConfig.apiKey !== "";
-        if (isFirebaseReady) {
-            const app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
-        }
-        window.firebaseCtx = { db, auth, isFirebaseReady };
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        
+        // 將 Firebase 功能掛載到 window，讓 HTML 可以呼叫
+        window.firebaseCtx = { db, auth, signInWithEmailAndPassword, signOut, collection, doc, addDoc, getDocs, onSnapshot, query, deleteDoc, updateDoc, writeBatch, where, orderBy };
+
+        // 監聽登入狀態
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                document.getElementById('login-view').classList.add('hidden');
+                document.getElementById('main-view').classList.remove('hidden');
+                document.getElementById('user-email').innerText = user.email;
+                if(window.initApp) window.initApp(); // 啟動雲端資料同步
+            } else {
+                document.getElementById('login-view').classList.remove('hidden');
+                document.getElementById('main-view').classList.add('hidden');
+            }
+        });
     </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
@@ -51,11 +63,10 @@
                     <h1 class="text-2xl font-bold">內部供應商管理系統</h1>
                 </div>
                 <form id="login-form" class="space-y-4">
-                    <input type="email" id="email" required placeholder="name@yourcompany.com" class="w-full px-4 py-3 rounded-lg border outline-none">
-                    <input type="password" id="password" required placeholder="密碼" class="w-full px-4 py-3 rounded-lg border outline-none">
-                    <div id="login-error" class="text-red-500 text-xs hidden">登入失敗，請檢查權限。</div>
-                    <button type="submit" class="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-200">登入系統</button>
-                    <p id="offline-hint" class="text-amber-600 text-center text-xs mt-4 hidden">模式：離線預覽中</p>
+                    <input type="email" id="email" required placeholder="帳號 Email" class="w-full px-4 py-3 rounded-lg border outline-none focus:ring-2 focus:ring-blue-500">
+                    <input type="password" id="password" required placeholder="密碼" class="w-full px-4 py-3 rounded-lg border outline-none focus:ring-2 focus:ring-blue-500">
+                    <div id="login-error" class="text-red-500 text-xs hidden">登入失敗，請檢查帳號密碼。</div>
+                    <button type="submit" id="login-btn" class="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-200">登入雲端系統</button>
                 </form>
             </div>
         </div>
@@ -65,7 +76,7 @@
             <nav class="bg-white border-b px-6 py-4 sticky top-0 z-20 flex justify-between items-center">
                 <div class="flex items-center gap-2">
                     <div class="bg-blue-600 p-1.5 rounded text-white"><i data-lucide="database" class="w-5 h-5"></i></div>
-                    <span class="font-bold text-lg">集團查核系統</span>
+                    <span class="font-bold text-lg">集團雲端查核系統</span>
                 </div>
                 <div class="flex items-center gap-4">
                     <button onclick="switchTab('search')" class="tab-btn px-3 py-1 rounded-md bg-blue-50 text-blue-600 font-bold" data-tab="search">查詢</button>
@@ -73,7 +84,8 @@
                     <button onclick="switchTab('entities')" class="tab-btn px-3 py-1 text-slate-600" data-tab="entities">實體設定</button>
                     <button onclick="switchTab('conflicts')" class="tab-btn px-3 py-1 text-slate-600" data-tab="conflicts">衝突</button>
                     <div class="h-6 w-px bg-slate-200 ml-2"></div>
-                    <button id="logout-btn" class="text-slate-400 hover:text-red-500"><i data-lucide="log-out" class="w-5 h-5"></i></button>
+                    <div class="hidden md:block text-xs text-slate-400 font-bold" id="user-email"></div>
+                    <button onclick="handleLogout()" class="text-slate-400 hover:text-red-500"><i data-lucide="log-out" class="w-5 h-5"></i></button>
                 </div>
             </nav>
 
@@ -101,19 +113,19 @@
                                 <div class="space-y-3">
                                     <select id="import-entity" class="w-full border p-2 rounded text-sm outline-none bg-slate-50 font-bold border-blue-200"></select>
                                     <div class="flex gap-2">
-                                        <input type="text" id="m-name-cn" placeholder="中文名稱" class="w-1/2 border p-2 rounded text-sm outline-none">
-                                        <input type="text" id="m-name-en" placeholder="英文名稱" class="w-1/2 border p-2 rounded text-sm outline-none">
+                                        <input type="text" id="m-name-cn" placeholder="中文名稱" class="w-1/2 border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500">
+                                        <input type="text" id="m-name-en" placeholder="英文名稱" class="w-1/2 border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500">
                                     </div>
                                     <div class="flex gap-2">
-                                        <select id="m-type" class="w-1/3 border p-2 rounded text-sm outline-none"><option value="供應商">供應商</option><option value="承判商">承判商</option></select>
-                                        <select id="m-status" class="w-1/3 border p-2 rounded text-sm outline-none"><option value="活躍">活躍</option><option value="暫停">暫停</option><option value="黑名單">黑名單</option></select>
-                                        <input type="text" id="m-phone" placeholder="電話" class="w-1/3 border p-2 rounded text-sm outline-none">
+                                        <select id="m-type" class="w-1/3 border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500"><option value="供應商">供應商</option><option value="承判商">承判商</option></select>
+                                        <select id="m-status" class="w-1/3 border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500"><option value="活躍">活躍</option><option value="暫停">暫停</option><option value="黑名單">黑名單</option></select>
+                                        <input type="text" id="m-phone" placeholder="電話" class="w-1/3 border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500">
                                     </div>
-                                    <input type="text" id="m-tags" placeholder="工種 (如: 五金, 機電)" class="w-full border p-2 rounded text-sm outline-none">
-                                    <textarea id="m-note" placeholder="備註" class="w-full border p-2 rounded text-sm outline-none h-16"></textarea>
+                                    <input type="text" id="m-tags" placeholder="工種 (如: 五金, 機電)" class="w-full border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500">
+                                    <textarea id="m-note" placeholder="備註" class="w-full border p-2 rounded text-sm outline-none h-16 focus:ring-1 focus:ring-blue-500"></textarea>
                                     <button onclick="handleManualAdd()" class="w-full bg-blue-600 text-white py-2 rounded font-bold text-sm hover:bg-blue-700">確認手動新增</button>
-                                    <div class="relative border-2 border-dashed border-slate-200 rounded-lg p-4 text-center mt-2 hover:bg-slate-50 transition">
-                                        <input type="file" id="excel-file" class="absolute inset-0 opacity-0 cursor-pointer">
+                                    <div class="relative border-2 border-dashed border-slate-200 rounded-lg p-4 text-center mt-2 hover:bg-slate-50 transition cursor-pointer">
+                                        <input type="file" id="excel-file" class="absolute inset-0 opacity-0 cursor-pointer" accept=".xlsx, .xls">
                                         <p class="text-xs text-slate-500 font-medium">點擊在此上傳 Excel 批量導入</p>
                                     </div>
                                     <button onclick="downloadTemplate()" class="w-full text-xs text-blue-500 hover:underline">下載 Excel 標準範本</button>
@@ -123,20 +135,26 @@
                         <!-- 右側：清單與進階篩選 -->
                         <div class="lg:w-2/3">
                             <div class="bg-white p-4 rounded-xl border shadow-sm mb-4">
-                                <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                                    <div class="relative">
+                                <div class="grid grid-cols-1 sm:grid-cols-5 gap-3">
+                                    <div class="relative sm:col-span-1">
                                         <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4"></i>
-                                        <input type="text" id="manage-search" placeholder="關鍵字搜尋..." class="w-full pl-9 pr-3 py-2 border rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500">
+                                        <input type="text" id="manage-search" placeholder="搜尋..." class="w-full pl-9 pr-3 py-2 border rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500">
                                     </div>
-                                    <select id="filter-entity" class="border p-2 rounded-lg text-sm outline-none"><option value="">所有實體</option></select>
-                                    <select id="filter-status" class="border p-2 rounded-lg text-sm outline-none">
+                                    <select id="filter-entity" class="border p-2 rounded-lg text-sm outline-none sm:col-span-1"><option value="">所有實體</option></select>
+                                    <select id="filter-status" class="border p-2 rounded-lg text-sm outline-none sm:col-span-1">
                                         <option value="">所有狀態</option>
                                         <option value="活躍">活躍</option>
                                         <option value="暫停">暫停</option>
                                         <option value="黑名單">黑名單</option>
                                     </select>
-                                    <button onclick="openExportModal()" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 hover:bg-green-700">
-                                        <i data-lucide="download-cloud" class="w-4 h-4"></i> 導出數據
+                                    <!-- 新增：類型篩選 -->
+                                    <select id="filter-type" class="border p-2 rounded-lg text-sm outline-none sm:col-span-1">
+                                        <option value="">所有類型</option>
+                                        <option value="供應商">供應商</option>
+                                        <option value="承判商">承判商</option>
+                                    </select>
+                                    <button onclick="openExportModal()" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 hover:bg-green-700 sm:col-span-1">
+                                        <i data-lucide="download-cloud" class="w-4 h-4"></i> 導出
                                     </button>
                                 </div>
                             </div>
@@ -162,10 +180,10 @@
                     <div class="max-w-2xl mx-auto">
                         <div class="bg-white p-6 rounded-2xl border shadow-sm">
                             <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i data-lucide="settings" class="text-slate-600"></i> 集團實體管理</h2>
-                            <p class="text-sm text-slate-500 mb-6">您可以在此新增、修改或刪除子公司名稱，設定將自動同步到導入與篩選功能中。</p>
+                            <p class="text-sm text-slate-500 mb-6">您可以在此新增、修改或刪除子公司名稱。所有修改都會即時同步到雲端資料庫。</p>
                             <div class="flex gap-2 mb-6">
-                                <input type="text" id="new-entity-name" placeholder="輸入新實體名稱 (如: 子公司 PP)" class="flex-grow border px-4 py-2 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
-                                <button onclick="handleAddEntity()" class="bg-slate-900 text-white px-6 py-2 rounded-lg font-bold hover:bg-slate-800 transition">新增實體</button>
+                                <input type="text" id="new-entity-name" placeholder="輸入新實體名稱" class="flex-grow border px-4 py-2 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                                <button onclick="handleAddEntity()" class="bg-slate-900 text-white px-6 py-2 rounded-lg font-bold hover:bg-slate-800 transition">新增</button>
                             </div>
                             <div class="space-y-2" id="entities-list"></div>
                         </div>
@@ -185,30 +203,51 @@
             </div>
         </div>
 
-        <!-- 編輯視窗 -->
+        <!-- 編輯 Modal (已加上欄位名稱) -->
         <div id="edit-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <div class="bg-white p-6 rounded-xl w-full max-w-md shadow-xl">
-                <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><i data-lucide="edit-3" class="text-blue-600"></i> 修改供應商資料</h3>
+                <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><i data-lucide="edit-3" class="text-blue-600"></i> 修改資料</h3>
                 <input type="hidden" id="edit-id">
                 <div class="space-y-3">
-                    <input type="text" id="edit-name-cn" placeholder="中文名稱" class="w-full border p-2 rounded text-sm outline-none">
-                    <input type="text" id="edit-name-en" placeholder="英文名稱" class="w-full border p-2 rounded text-sm outline-none">
-                    <div class="flex gap-2">
-                        <select id="edit-type" class="w-1/2 border p-2 rounded text-sm outline-none"><option value="供應商">供應商</option><option value="承判商">承判商</option></select>
-                        <select id="edit-status" class="w-1/2 border p-2 rounded text-sm outline-none"><option value="活躍">活躍</option><option value="暫停">暫停</option><option value="黑名單">黑名單</option></select>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">中文名稱</label>
+                        <input type="text" id="edit-name-cn" class="w-full border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500">
                     </div>
-                    <input type="text" id="edit-tags" placeholder="工種" class="w-full border p-2 rounded text-sm outline-none">
-                    <input type="text" id="edit-phone" placeholder="電話" class="w-full border p-2 rounded text-sm outline-none">
-                    <textarea id="edit-note" placeholder="備註" class="w-full border p-2 rounded text-sm outline-none h-20"></textarea>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">英文名稱</label>
+                        <input type="text" id="edit-name-en" class="w-full border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500">
+                    </div>
+                    <div class="flex gap-2">
+                        <div class="w-1/2">
+                            <label class="block text-xs font-bold text-slate-500 mb-1">類型</label>
+                            <select id="edit-type" class="w-full border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500"><option value="供應商">供應商</option><option value="承判商">承判商</option></select>
+                        </div>
+                        <div class="w-1/2">
+                            <label class="block text-xs font-bold text-slate-500 mb-1">狀態</label>
+                            <select id="edit-status" class="w-full border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500"><option value="活躍">活躍</option><option value="暫停">暫停</option><option value="黑名單">黑名單</option></select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">工種</label>
+                        <input type="text" id="edit-tags" class="w-full border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">聯絡電話</label>
+                        <input type="text" id="edit-phone" class="w-full border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">備註訊息</label>
+                        <textarea id="edit-note" class="w-full border p-2 rounded text-sm outline-none h-16 focus:ring-1 focus:ring-blue-500"></textarea>
+                    </div>
                     <div class="flex gap-2 pt-2">
-                        <button onclick="closeEditModal()" class="w-1/2 bg-slate-100 py-2 rounded font-bold text-sm">取消</button>
-                        <button onclick="saveEdit()" class="w-1/2 bg-blue-600 text-white py-2 rounded font-bold text-sm">儲存修改</button>
+                        <button onclick="closeEditModal()" class="w-1/2 bg-slate-100 text-slate-700 py-2 rounded font-bold text-sm hover:bg-slate-200 transition">取消</button>
+                        <button onclick="saveEdit()" class="w-1/2 bg-blue-600 text-white py-2 rounded font-bold text-sm hover:bg-blue-700 transition">儲存修改</button>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- 導出視窗 -->
+        <!-- 導出 Modal -->
         <div id="export-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <div class="bg-white p-6 rounded-xl w-full max-w-md shadow-xl">
                 <h3 class="font-bold text-lg mb-4">選擇導出範圍</h3>
@@ -230,62 +269,102 @@
 
     <script>
         let supplierData = [];
-        let entityList = ["母公司", "子公司 01", "子公司 02"]; // 預設實體
+        let entityList = [];
+        let entityDocs = {}; // Mapping of entity Name -> Document ID
         
         lucide.createIcons();
 
-        // 登入
+        // 登入邏輯
         document.getElementById('login-form').onsubmit = async (e) => {
             e.preventDefault();
             const email = document.getElementById('email').value;
-            const allowedDomain = "@yourcompany.com";
-            if (!email.endsWith(allowedDomain) && email !== "admin@test.com") {
+            const password = document.getElementById('password').value;
+            const btn = document.getElementById('login-btn');
+            
+            btn.disabled = true;
+            btn.innerText = "驗證中...";
+            document.getElementById('login-error').classList.add('hidden');
+            
+            try {
+                // 使用真實的 Firebase Auth 登入
+                await window.firebaseCtx.signInWithEmailAndPassword(window.firebaseCtx.auth, email, password);
+            } catch (err) {
+                document.getElementById('login-error').innerText = "登入失敗：" + err.message;
                 document.getElementById('login-error').classList.remove('hidden');
-                return;
+                btn.disabled = false;
+                btn.innerText = "登入雲端系統";
             }
-            showMainView();
         };
 
-        function showMainView() {
-            document.getElementById('login-view').classList.add('hidden');
-            document.getElementById('main-view').classList.remove('hidden');
-            initApp();
+        function handleLogout() {
+            window.firebaseCtx.signOut(window.firebaseCtx.auth);
         }
 
-        async function initApp() {
-            // 從 LocalStorage 加載實體設定
-            const savedEntities = localStorage.getItem('app_entities');
-            if (savedEntities) entityList = JSON.parse(savedEntities);
-            
-            updateEntityUIs();
-            loadSuppliers();
+        // 初始化資料同步 (雲端版)
+        window.initApp = function() {
+            const { db, collection, onSnapshot, query, orderBy } = window.firebaseCtx;
+
+            // 1. 監聽實體資料庫 (Entities)
+            onSnapshot(collection(db, "entities"), (snap) => {
+                entityList = [];
+                entityDocs = {};
+                snap.forEach(d => {
+                    const data = d.data();
+                    entityList.push(data.name);
+                    entityDocs[data.name] = d.id; // 記錄 ID 以便修改/刪除
+                });
+                
+                // 如果是全新專案，自動建立預設實體
+                if(entityList.length === 0) {
+                    const defaultEntities = ['母公司', '子公司 01'];
+                    defaultEntities.forEach(async name => {
+                        await window.firebaseCtx.addDoc(collection(db, "entities"), { name });
+                    });
+                } else {
+                    entityList.sort(); // 字母排序
+                    updateEntityUIs();
+                }
+            });
+
+            // 2. 監聽供應商資料庫 (Suppliers)
+            const q = query(collection(db, "suppliers"), orderBy("timestamp", "desc"));
+            onSnapshot(q, (snap) => {
+                supplierData = [];
+                snap.forEach(d => {
+                    supplierData.push({ id: d.id, ...d.data() });
+                });
+                renderAll();
+            });
+        };
+
+        function toggleLoading(show) {
+            document.getElementById('loading').classList.toggle('hidden', !show);
         }
 
+        // --- 實體管理 (Firestore 雲端版) ---
         function updateEntityUIs() {
-            // 更新所有下拉選單
             const ids = ['import-entity', 'filter-entity'];
             ids.forEach(id => {
                 const el = document.getElementById(id);
                 if (!el) return;
-                const currentValue = el.value;
+                const cur = el.value;
                 el.innerHTML = id === 'filter-entity' ? '<option value="">所有實體</option>' : '';
-                entityList.forEach(e => {
-                    el.innerHTML += `<option value="${e}">${e}</option>`;
-                });
-                el.value = currentValue || (id === 'import-entity' ? entityList[0] : "");
+                entityList.forEach(e => el.innerHTML += `<option value="${e}">${e}</option>`);
+                // 保留當前選擇，若無則預設第一個
+                if(cur && entityList.includes(cur)) el.value = cur;
+                else if (id === 'import-entity' && entityList.length > 0) el.value = entityList[0];
             });
 
-            // 更新實體管理列表
             const list = document.getElementById('entities-list');
             if (list) {
                 list.innerHTML = '';
-                entityList.forEach((e, idx) => {
+                entityList.forEach((e) => {
                     list.innerHTML += `
-                        <div class="flex justify-between items-center p-3 bg-slate-50 rounded-lg border">
+                        <div class="flex justify-between items-center p-3 bg-slate-50 hover:bg-white rounded-lg border transition">
                             <span class="font-bold text-slate-700">${e}</span>
                             <div class="flex gap-2">
-                                <button onclick="editEntity(${idx})" class="text-slate-300 hover:text-blue-500"><i data-lucide="edit-2" class="w-4 h-4"></i></button>
-                                <button onclick="removeEntity(${idx})" class="text-slate-300 hover:text-red-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                <button onclick="editEntity('${e}')" class="text-slate-300 hover:text-blue-500"><i data-lucide="edit-2" class="w-4 h-4"></i></button>
+                                <button onclick="removeEntity('${e}')" class="text-slate-300 hover:text-red-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                             </div>
                         </div>
                     `;
@@ -294,106 +373,105 @@
             }
         }
 
-        function handleAddEntity() {
-            const input = document.getElementById('new-entity-name');
-            const name = input.value.trim();
-            if (!name) return;
-            if (entityList.includes(name)) return alert("實體名稱已存在");
-            entityList.push(name);
-            saveEntities();
-            input.value = '';
-            updateEntityUIs();
+        async function handleAddEntity() {
+            const val = document.getElementById('new-entity-name').value.trim();
+            if (!val || entityList.includes(val)) return;
+            
+            toggleLoading(true);
+            try {
+                await window.firebaseCtx.addDoc(window.firebaseCtx.collection(window.firebaseCtx.db, "entities"), { name: val });
+                document.getElementById('new-entity-name').value = '';
+            } catch(e) { alert("新增失敗"); }
+            toggleLoading(false);
         }
 
-        function editEntity(idx) {
-            const oldName = entityList[idx];
+        async function editEntity(oldName) {
             const newName = prompt("修改實體名稱：", oldName);
             if (newName && newName.trim() !== "" && newName !== oldName) {
                 const trimmedNewName = newName.trim();
                 if (entityList.includes(trimmedNewName)) return alert("實體名稱已存在");
                 
-                // 同步更新供應商名單中的實體名稱
-                supplierData.forEach(s => {
-                    if (s.entity === oldName) s.entity = trimmedNewName;
-                });
-                
-                entityList[idx] = trimmedNewName;
-                saveEntities();
-                saveToStorage();
-                updateEntityUIs();
-                renderAll();
+                toggleLoading(true);
+                try {
+                    const { db, doc, updateDoc, collection, query, where, getDocs, writeBatch } = window.firebaseCtx;
+                    
+                    // 1. 更新實體庫
+                    const entityId = entityDocs[oldName];
+                    if (entityId) {
+                        await updateDoc(doc(db, "entities", entityId), { name: trimmedNewName });
+                    }
+                    
+                    // 2. 批量更新關聯的供應商
+                    const q = query(collection(db, "suppliers"), where("entity", "==", oldName));
+                    const querySnapshot = await getDocs(q);
+                    const batch = writeBatch(db);
+                    
+                    querySnapshot.forEach((d) => {
+                        batch.update(d.ref, { entity: trimmedNewName });
+                    });
+                    await batch.commit();
+                    alert("修改成功，已自動同步所有關聯的供應商。");
+                } catch (e) {
+                    alert("修改失敗: " + e.message);
+                }
+                toggleLoading(false);
             }
         }
 
-        function removeEntity(idx) {
-            if (!confirm(`確定要刪除「${entityList[idx]}」嗎？這不會刪除已屬該實體的供應商，但會影響篩選。`)) return;
-            entityList.splice(idx, 1);
-            saveEntities();
-            updateEntityUIs();
-        }
-
-        function saveEntities() {
-            localStorage.setItem('app_entities', JSON.stringify(entityList));
-        }
-
-        async function loadSuppliers() {
-            const saved = localStorage.getItem('offline_suppliers');
-            supplierData = saved ? JSON.parse(saved) : [];
-            renderAll();
-        }
-
-        function renderAll() {
-            renderSearch();
-            renderManageTable();
-        }
-
-        function getStatusStyle(status) {
-            if (status === "黑名單") return "text-red-600 bg-red-50 border-red-200";
-            if (status === "暫停") return "text-amber-600 bg-amber-50 border-amber-200";
-            return "text-green-600 bg-green-50 border-green-200";
-        }
-
-        function getTypeStyle(type) {
-            if (type === "承判商") return "text-blue-600 bg-blue-50 border-blue-200";
-            return "text-slate-600 bg-slate-50 border-slate-200";
+        async function removeEntity(name) {
+            if (!confirm(`確定刪除實體「${name}」？\n注意：這不會刪除原本屬於該實體的供應商，但會影響他們的分類。`)) return;
+            
+            const entityId = entityDocs[name];
+            if (entityId) {
+                toggleLoading(true);
+                await window.firebaseCtx.deleteDoc(window.firebaseCtx.doc(window.firebaseCtx.db, "entities", entityId));
+                toggleLoading(false);
+            }
         }
 
         // --- 核心渲染與篩選 ---
+        function getStatusStyle(s) {
+            if (s === "黑名單") return "text-red-600 bg-red-50 border-red-200";
+            if (s === "暫停") return "text-amber-600 bg-amber-50 border-amber-200";
+            return "text-green-600 bg-green-50 border-green-200";
+        }
+
+        function getTypeStyle(t) {
+            return t === "承判商" ? "text-purple-600 bg-purple-50 border-purple-200" : "text-blue-600 bg-blue-50 border-blue-200";
+        }
+
         function renderManageTable() {
             const tbody = document.getElementById('manage-table-body');
             const q = document.getElementById('manage-search').value.toLowerCase();
-            const fEntity = document.getElementById('filter-entity').value;
-            const fStatus = document.getElementById('filter-status').value;
+            const fE = document.getElementById('filter-entity').value;
+            const fS = document.getElementById('filter-status').value;
+            const fT = document.getElementById('filter-type').value; // 新增：類型過濾
 
             const filtered = supplierData.filter(s => {
-                const matchKeyword = (s.name_cn || "").toLowerCase().includes(q) || (s.name_en || "").toLowerCase().includes(q) || (s.tags || "").toLowerCase().includes(q);
-                const matchEntity = fEntity === "" || s.entity === fEntity;
-                const matchStatus = fStatus === "" || s.status === fStatus;
-                return matchKeyword && matchEntity && matchStatus;
+                const mk = (s.name_cn||"").toLowerCase().includes(q) || (s.name_en||"").toLowerCase().includes(q) || (s.tags||"").toLowerCase().includes(q);
+                return mk && (fE === "" || s.entity === fE) && (fS === "" || s.status === fS) && (fT === "" || s.type === fT);
             });
 
             tbody.innerHTML = '';
-            filtered.slice().reverse().forEach(s => {
-                const statusStyle = getStatusStyle(s.status);
-                const typeStyle = getTypeStyle(s.type);
-                
+            filtered.forEach(s => {
                 tbody.innerHTML += `
                     <tr class="border-b hover:bg-slate-50 transition">
                         <td class="p-4">
-                            <div class="text-[12px] font-bold text-blue-500 uppercase leading-none mb-1.5">${s.entity}</div>
-                            <div class="font-bold text-base">${s.name_cn || '-'}</div>
-                            <div class="text-xs text-slate-400">${s.name_en || '-'}</div>
+                            <div class="text-[12px] font-bold text-blue-500 mb-1 uppercase tracking-widest">${s.entity}</div>
+                            <div class="font-bold text-base text-slate-800">${s.name_cn || '-'}</div>
+                            <div class="text-xs text-slate-400 font-medium">${s.name_en || '-'}</div>
+                            <div class="text-xs text-slate-400 mt-1" style="display: ${s.phone ? 'block' : 'none'}"><i class="fas fa-phone mr-1"></i>${s.phone || '-'}</div>
                         </td>
                         <td class="p-4">
-                            <div class="flex flex-col gap-1.5">
-                                <span class="px-2 py-0.5 rounded-full border text-[10px] font-bold w-fit ${statusStyle}">${s.status || '活躍'}</span>
-                                <span class="px-2 py-0.5 rounded-full border text-[10px] font-bold w-fit ${typeStyle}">${s.type}</span>
+                            <div class="flex flex-col gap-1.5 w-fit">
+                                <span class="px-2 py-0.5 rounded-md border text-[10px] font-bold ${getStatusStyle(s.status)}">${s.status}</span>
+                                <span class="px-2 py-0.5 rounded-md border text-[10px] font-bold ${getTypeStyle(s.type)}">${s.type}</span>
                             </div>
                         </td>
-                        <td class="p-4 text-xs text-slate-400 max-w-[150px] truncate">${s.tags || '-'}</td>
-                        <td class="p-4 text-right">
-                            <button onclick="openEditModal('${s.id}')" class="p-1 text-slate-400 hover:text-blue-600 transition"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
-                            <button onclick="deleteItem('${s.id}')" class="p-1 text-slate-400 hover:text-red-500 transition"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        <td class="p-4 text-xs text-slate-500 max-w-[150px] truncate leading-relaxed">${s.tags || '-'}</td>
+                        <td class="p-4 text-right whitespace-nowrap">
+                            <button onclick="openEditModal('${s.id}')" class="p-2 text-blue-400 hover:text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition mr-1"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                            <button onclick="deleteItem('${s.id}')" class="p-2 text-red-300 hover:text-red-500 bg-red-50 hover:bg-red-100 rounded-lg transition"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                         </td>
                     </tr>
                 `;
@@ -401,16 +479,49 @@
             lucide.createIcons();
         }
 
-        // 監聽篩選器變化
-        ['manage-search', 'filter-entity', 'filter-status'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.oninput = renderManageTable;
-        });
+        function renderSearch() {
+            const container = document.getElementById('search-results');
+            const query = document.getElementById('global-search').value.toLowerCase();
+            container.innerHTML = '';
+            
+            supplierData.filter(s => (s.name_cn||"").toLowerCase().includes(query) || (s.name_en||"").toLowerCase().includes(query) || (s.tags||"").toLowerCase().includes(query)).forEach(s => {
+                container.innerHTML += `
+                    <div class="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition">
+                        <div class="flex justify-between items-start mb-3">
+                            <span class="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">${s.entity}</span>
+                            <div class="flex gap-1">
+                                <span class="px-2 py-0.5 rounded border text-[9px] font-bold ${getStatusStyle(s.status)}">${s.status}</span>
+                                <span class="px-2 py-0.5 rounded border text-[9px] font-bold ${getTypeStyle(s.type)}">${s.type}</span>
+                            </div>
+                        </div>
+                        <h4 class="font-bold text-lg text-slate-800">${s.name_cn || '-'}</h4>
+                        <div class="text-xs text-slate-400 font-medium mb-3">${s.name_en || '-'}</div>
+                        <p class="text-[11px] text-slate-600 mb-2 leading-relaxed font-medium"><i data-lucide="tag" class="w-3 h-3 inline"></i> 工種：${s.tags || '無'}</p>
+                        <div class="border-t border-slate-100 pt-3 mt-3">
+                            <span class="text-[9px] font-bold text-slate-400 uppercase">備註</span>
+                            <p class="text-[11px] text-slate-500 italic mt-0.5">${s.note || '無備註'}</p>
+                        </div>
+                    </div>
+                `;
+            });
+            lucide.createIcons();
+        }
 
-        // --- 功能模組 ---
+        // --- 輔助功能 ---
+        function switchTab(t) {
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+            document.getElementById(`tab-${t}`).classList.remove('hidden');
+            document.querySelectorAll('.tab-btn').forEach(b => {
+                b.className = "tab-btn px-3 py-1 text-slate-600 transition hover:text-blue-600";
+                if(b.dataset.tab === t) b.className = "tab-btn px-3 py-1 rounded-md bg-blue-50 text-blue-600 font-bold";
+            });
+            if(t === 'conflicts') renderConflicts();
+            if(t === 'entities') updateEntityUIs();
+        }
+
+        // Firestore 寫入操作
         async function handleManualAdd() {
             const item = {
-                id: "ID" + Date.now(),
                 name_cn: document.getElementById('m-name-cn').value,
                 name_en: document.getElementById('m-name-en').value,
                 type: document.getElementById('m-type').value,
@@ -421,47 +532,49 @@
                 entity: document.getElementById('import-entity').value,
                 timestamp: Date.now()
             };
-            if (!item.name_cn && !item.name_en) return alert("請輸入公司名稱");
-            supplierData.push(item);
-            saveToStorage();
-            alert("已新增");
-            ['m-name-cn', 'm-name-en', 'm-tags', 'm-phone', 'm-note'].forEach(id => document.getElementById(id).value = '');
-            renderAll();
+            if(!item.name_cn && !item.name_en) return alert("請輸入名稱");
+            
+            toggleLoading(true);
+            try {
+                const { db, collection, addDoc } = window.firebaseCtx;
+                await addDoc(collection(db, "suppliers"), item);
+                alert("已成功寫入雲端");
+                ['m-name-cn','m-name-en','m-tags','m-phone','m-note'].forEach(i=>document.getElementById(i).value='');
+            } catch (e) {
+                alert("寫入失敗");
+            }
+            toggleLoading(false);
         }
 
-        function saveToStorage() {
-            localStorage.setItem('offline_suppliers', JSON.stringify(supplierData));
-        }
+        function renderAll() { renderSearch(); renderManageTable(); }
 
-        function deleteItem(id) {
-            if (!confirm("確定刪除？")) return;
-            supplierData = supplierData.filter(s => s.id !== id);
-            saveToStorage();
-            renderAll();
+        async function deleteItem(id) { 
+            if(confirm("確定永久刪除？")) { 
+                toggleLoading(true);
+                await window.firebaseCtx.deleteDoc(window.firebaseCtx.doc(window.firebaseCtx.db, "suppliers", id));
+                toggleLoading(false);
+            } 
         }
-
+        
         function openEditModal(id) {
-            const item = supplierData.find(s => s.id === id);
-            if (!item) return;
-            document.getElementById('edit-id').value = item.id;
-            document.getElementById('edit-name-cn').value = item.name_cn || '';
-            document.getElementById('edit-name-en').value = item.name_en || '';
-            document.getElementById('edit-type').value = item.type;
-            document.getElementById('edit-status').value = item.status;
-            document.getElementById('edit-tags').value = item.tags || '';
-            document.getElementById('edit-phone').value = item.phone || '';
-            document.getElementById('edit-note').value = item.note || '';
+            const s = supplierData.find(x=>x.id===id);
+            if(!s) return;
+            document.getElementById('edit-id').value = s.id;
+            document.getElementById('edit-name-cn').value = s.name_cn || '';
+            document.getElementById('edit-name-en').value = s.name_en || '';
+            document.getElementById('edit-type').value = s.type || '供應商';
+            document.getElementById('edit-status').value = s.status || '活躍';
+            document.getElementById('edit-tags').value = s.tags || '';
+            document.getElementById('edit-phone').value = s.phone || '';
+            document.getElementById('edit-note').value = s.note || '';
             document.getElementById('edit-modal').classList.remove('hidden');
         }
-
+        
         function closeEditModal() { document.getElementById('edit-modal').classList.add('hidden'); }
-
+        
         async function saveEdit() {
             const id = document.getElementById('edit-id').value;
-            const idx = supplierData.findIndex(s => s.id === id);
-            if (idx === -1) return;
-            supplierData[idx] = {
-                ...supplierData[idx],
+            const updatedData = {
                 name_cn: document.getElementById('edit-name-cn').value,
                 name_en: document.getElementById('edit-name-en').value,
                 type: document.getElementById('edit-type').value,
@@ -470,178 +583,140 @@
                 phone: document.getElementById('edit-phone').value,
                 note: document.getElementById('edit-note').value,
             };
-            saveToStorage();
-            closeEditModal();
-            renderAll();
+            
+            toggleLoading(true);
+            try {
+                await window.firebaseCtx.updateDoc(window.firebaseCtx.doc(window.firebaseCtx.db, "suppliers", id), updatedData);
+                closeEditModal();
+            } catch (e) {
+                alert("更新失敗");
+            }
+            toggleLoading(false);
         }
 
-        // --- 分頁與 UI ---
-        function switchTab(tabId) {
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
-            document.getElementById(`tab-${tabId}`).classList.remove('hidden');
-            document.querySelectorAll('.tab-btn').forEach(b => {
-                b.className = "tab-btn px-3 py-1 text-slate-600 transition";
-                if(b.dataset.tab === tabId) b.className = "tab-btn px-3 py-1 rounded-md bg-blue-50 text-blue-600 font-bold";
-            });
-            if(tabId === 'conflicts') renderConflicts();
-            if(tabId === 'entities') updateEntityUIs();
-        }
-
-        function renderSearch() {
-            const container = document.getElementById('search-results');
-            const query = document.getElementById('global-search').value.toLowerCase();
-            container.innerHTML = '';
-            supplierData.filter(s => (s.name_cn || "").toLowerCase().includes(query) || (s.name_en || "").toLowerCase().includes(query)).forEach(s => {
-                const statusStyle = getStatusStyle(s.status);
-                const typeStyle = getTypeStyle(s.type);
-                
-                container.innerHTML += `
-                    <div class="bg-white p-5 rounded-xl border shadow-sm">
-                        <div class="flex justify-between items-start mb-3">
-                            <span class="text-[10px] font-bold text-blue-600 uppercase">${s.entity}</span>
-                            <div class="flex gap-1">
-                                <span class="px-2 py-0.5 rounded-full border text-[9px] font-bold ${statusStyle}">${s.status}</span>
-                                <span class="px-2 py-0.5 rounded-full border text-[9px] font-bold ${typeStyle}">${s.type}</span>
-                            </div>
-                        </div>
-                        <h4 class="font-bold text-slate-800">${s.name_cn || '-'}</h4>
-                        <div class="text-xs text-slate-400 font-medium mb-2">${s.name_en || '-'}</div>
-                        <p class="text-[11px] text-slate-500 mb-3">${s.tags || '一般工種'}</p>
-                        <div class="border-t pt-3">
-                            <div class="text-[10px] text-slate-400 font-bold uppercase mb-1">備註資料</div>
-                            <p class="text-[11px] text-slate-400 italic">${s.note || '暫無備註'}</p>
-                        </div>
-                    </div>
-                `;
-            });
-        }
-        document.getElementById('global-search').oninput = renderSearch;
-
-        // Excel 導入
+        // Excel 雲端導入
         document.getElementById('excel-file').addEventListener('change', function(e) {
             const file = e.target.files[0];
             const entity = document.getElementById('import-entity').value;
             if (!file) return;
+            
+            toggleLoading(true);
             const reader = new FileReader();
-            reader.onload = function(evt) {
+            reader.onload = async function(evt) {
                 const data = new Uint8Array(evt.target.result);
                 const workbook = XLSX.read(data, { type: 'array' });
                 const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-                rows.forEach(row => {
-                    supplierData.push({
-                        id: "EX" + Math.random().toString(36).substr(2, 9),
-                        name_cn: row["中文名稱"] || "", name_en: row["英文名稱"] || "",
-                        type: row["類型"] || "供應商", status: row["狀態"] || "活躍",
-                        tags: row["工種"] || "", phone: row["聯絡電話"] || "",
+                
+                const { db, collection, addDoc } = window.firebaseCtx;
+                let count = 0;
+                
+                for (const row of rows) {
+                    const item = {
+                        name_cn: row["中文名稱"] || row["Name_CN"] || "",
+                        name_en: row["英文名稱"] || row["Name_EN"] || "",
+                        type: row["類型"] || row["Type"] || "供應商", 
+                        status: row["狀態"] || row["Status"] || "活躍",
+                        tags: row["工種"] || row["Category"] || "", 
+                        phone: row["聯絡電話"] || row["Phone"] || "",
                         note: row["備註"] || "",
-                        entity: entity, timestamp: Date.now()
-                    });
-                });
-                saveToStorage();
-                renderAll();
-                alert(`成功導入 ${rows.length} 筆資料`);
+                        entity: entity, 
+                        timestamp: Date.now()
+                    };
+                    if (item.name_cn || item.name_en) {
+                        await addDoc(collection(db, "suppliers"), item);
+                        count++;
+                    }
+                }
+                document.getElementById('excel-file').value = ""; // 清空
+                toggleLoading(false);
+                alert(`導入完成！已上傳 ${count} 筆資料到雲端。`);
             };
             reader.readAsArrayBuffer(file);
         });
 
-        function downloadTemplate() {
-            const ws = XLSX.utils.aoa_to_sheet([["中文名稱", "英文名稱", "類型", "狀態", "工種", "聯絡電話", "地址", "備註"]]);
-            const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "範本");
-            XLSX.writeFile(wb, "供應商導入範本.xlsx");
-        }
-
-        // 導出特定名單
-        function openExportModal() {
-            const container = document.getElementById('export-entities-container');
-            container.innerHTML = `
-                <label class="flex items-center gap-2 p-2 hover:bg-slate-200 rounded cursor-pointer border-b mb-2">
-                    <input type="checkbox" id="export-all" onchange="document.querySelectorAll('.exp-cb').forEach(c=>c.checked=this.checked)"> <span class="text-sm font-bold">全選</span>
-                </label>
-            `;
-            entityList.forEach(e => {
-                container.innerHTML += `<label class="flex items-center gap-2 p-2 hover:bg-slate-100 rounded cursor-pointer"><input type="checkbox" value="${e}" class="exp-cb"> <span class="text-sm">${e}</span></label>`;
-            });
-            document.getElementById('export-modal').classList.remove('hidden');
-        }
-        function closeExportModal() { document.getElementById('export-modal').classList.add('hidden'); }
-        function executeExport() {
-            const selected = Array.from(document.querySelectorAll('.exp-cb:checked')).map(c => c.value);
-            const data = supplierData.filter(s => selected.includes(s.entity));
-            let csv = "\uFEFF實體,中文名稱,英文名稱,類型,狀態,工種,電話,備註\n";
-            data.forEach(s => csv += `${s.entity},${s.name_cn},${s.name_en},${s.type},${s.status},${s.tags},${s.phone},${s.note}\n`);
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement("a");
-            link.href = URL.createObjectURL(blob);
-            link.download = "導出名單.csv";
-            link.click();
-            closeExportModal();
-        }
-
-        function getConflictData() {
-            const normalized = (s) => (s || "").toLowerCase().replace(/\s+/g, '').replace(/(limited|ltd|co|有限公司|公司)/g, "");
-            const conflicts = [];
+        // 衝突邏輯
+        function getConflictPairs() {
+            const norm = (s) => (s||"").toLowerCase().replace(/\s+/g,'').replace(/(limited|ltd|co|有限公司|公司)/g,"");
+            const res = [];
             for(let i=0; i<supplierData.length; i++) {
                 for(let j=i+1; j<supplierData.length; j++) {
                     const a = supplierData[i], b = supplierData[j];
-                    if(a.entity !== b.entity && (normalized(a.name_cn) === normalized(b.name_cn) || (a.name_en && b.name_en && normalized(a.name_en) === normalized(b.name_en)))) {
-                        conflicts.push({ a, b });
+                    if(a.entity !== b.entity && (norm(a.name_cn) === norm(b.name_cn) || (a.name_en && b.name_en && norm(a.name_en) === norm(b.name_en)))) {
+                        res.push({a, b});
                     }
                 }
             }
-            return conflicts;
+            return res;
         }
 
         function renderConflicts() {
-            const container = document.getElementById('conflict-list');
-            container.innerHTML = '';
-            const conflicts = getConflictData();
-            
-            if(conflicts.length > 0) {
-                conflicts.forEach(pair => {
-                    const { a, b } = pair;
-                    container.innerHTML += `
-                        <div class="bg-white border-l-4 border-red-500 p-4 rounded-xl flex justify-between items-center shadow-sm">
-                            <div class="w-2/5">
-                                <span class="text-[10px] text-slate-400 font-bold uppercase leading-none">${a.entity}</span>
-                                <div class="font-bold text-sm truncate">${a.name_cn || a.name_en}</div>
-                                <div class="text-[10px] text-slate-400">${a.status} / ${a.type}</div>
-                            </div>
-                            <div class="flex flex-col items-center">
-                                <i data-lucide="arrow-right-left" class="text-red-300 w-5 h-5 mb-1"></i>
-                                <span class="text-[9px] font-bold text-red-500 uppercase">衝突</span>
-                            </div>
-                            <div class="w-2/5 text-right">
-                                <span class="text-[10px] text-slate-400 font-bold uppercase leading-none">${b.entity}</span>
-                                <div class="font-bold text-sm truncate">${b.name_cn || b.name_en}</div>
-                                <div class="text-[10px] text-slate-400">${b.status} / ${b.type}</div>
-                            </div>
-                        </div>`;
-                });
-            } else {
-                container.innerHTML = '<p class="text-center py-10 text-slate-400 border-2 border-dashed rounded-xl">目前未發現跨實體衝突</p>';
-            }
+            const list = document.getElementById('conflict-list');
+            const pairs = getConflictPairs();
+            list.innerHTML = pairs.length ? '' : '<p class="text-center py-10 text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">目前未發現跨實體名稱衝突</p>';
+            pairs.forEach(p => {
+                list.innerHTML += `
+                    <div class="bg-white border-l-4 border-red-500 p-5 rounded-2xl flex justify-between items-center shadow-sm">
+                        <div class="w-5/12">
+                            <span class="text-[10px] text-slate-400 font-bold uppercase leading-none bg-slate-50 px-2 py-1 rounded">${p.a.entity}</span>
+                            <div class="font-bold text-base mt-2 truncate">${p.a.name_cn || p.a.name_en}</div>
+                            <div class="text-[11px] text-slate-500 mt-1 font-medium"><span class="${p.a.status==='活躍'?'text-green-600':(p.a.status==='黑名單'?'text-red-600':'text-amber-600')}">${p.a.status}</span> / ${p.a.type} / <span class="text-blue-600">工種: ${p.a.tags || '無'}</span></div>
+                        </div>
+                        <div class="flex flex-col items-center">
+                            <i data-lucide="arrow-right-left" class="text-red-300 w-5 h-5 mb-1"></i>
+                            <span class="text-[9px] font-bold text-red-500 uppercase tracking-widest bg-red-50 px-2 rounded">衝突</span>
+                        </div>
+                        <div class="w-5/12 text-right">
+                            <span class="text-[10px] text-slate-400 font-bold uppercase leading-none bg-slate-50 px-2 py-1 rounded">${p.b.entity}</span>
+                            <div class="font-bold text-base mt-2 truncate">${p.b.name_cn || p.b.name_en}</div>
+                            <div class="text-[11px] text-slate-500 mt-1 font-medium"><span class="${p.b.status==='活躍'?'text-green-600':(p.b.status==='黑名單'?'text-red-600':'text-amber-600')}">${p.b.status}</span> / ${p.b.type} / <span class="text-blue-600">工種: ${p.b.tags || '無'}</span></div>
+                        </div>
+                    </div>
+                `;
+            });
             lucide.createIcons();
         }
 
         function exportConflictReport() {
-            const conflicts = getConflictData();
-            if (conflicts.length === 0) {
-                alert("目前沒有發現任何衝突資料，無需導出。");
-                return;
-            }
-
-            let csv = "\uFEFF實體 A,公司名稱 A,狀態 A,類型 A,實體 B,公司名稱 B,狀態 B,類型 B\n";
-            conflicts.forEach(pair => {
-                const { a, b } = pair;
-                csv += `${a.entity},${a.name_cn || a.name_en},${a.status},${a.type},${b.entity},${b.name_cn || b.name_en},${b.status},${b.type}\n`;
-            });
-
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement("a");
-            link.href = URL.createObjectURL(blob);
-            link.download = `跨實體衝突報告_${new Date().toISOString().slice(0,10)}.csv`;
-            link.click();
+            const pairs = getConflictPairs();
+            if(!pairs.length) return alert("無衝突可導出");
+            // 新增: 工種 A, 工種 B
+            let csv = "\uFEFF實體A,公司A,狀態A,類型A,工種A,實體B,公司B,狀態B,類型B,工種B\n";
+            pairs.forEach(p => csv += `${p.a.entity},${p.a.name_cn || p.a.name_en},${p.a.status},${p.a.type},${p.a.tags || ''},${p.b.entity},${p.b.name_cn || p.b.name_en},${p.b.status},${p.b.type},${p.b.tags || ''}\n`);
+            const b = new Blob([csv], {type:'text/csv'});
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(b); a.download=`跨實體衝突報告_${new Date().toISOString().slice(0,10)}.csv`; a.click();
         }
+
+        function openExportModal() {
+            const c = document.getElementById('export-entities-container');
+            c.innerHTML = `
+                <label class="flex items-center gap-2 p-3 hover:bg-blue-50 rounded-lg cursor-pointer border-b border-slate-200 mb-2 transition">
+                    <input type="checkbox" id="export-all" onchange="document.querySelectorAll('.exp-cb').forEach(c=>c.checked=this.checked)" class="w-4 h-4 text-blue-600 rounded"> 
+                    <span class="text-sm font-bold text-blue-800">全選 / 取消全選</span>
+                </label>
+            `;
+            entityList.forEach(e => c.innerHTML += `<label class="flex items-center gap-2 p-2 hover:bg-slate-100 rounded cursor-pointer transition"><input type="checkbox" value="${e}" class="exp-cb w-4 h-4 rounded"> <span class="text-sm font-medium text-slate-700">${e}</span></label>`);
+            document.getElementById('export-modal').classList.remove('hidden');
+        }
+        function closeExportModal() { document.getElementById('export-modal').classList.add('hidden'); }
+        function executeExport() {
+            const sel = Array.from(document.querySelectorAll('.exp-cb:checked')).map(x=>x.value);
+            if (sel.length === 0) return alert("請至少選擇一個實體！");
+            
+            const data = supplierData.filter(s=>sel.includes(s.entity));
+            let csv = "\uFEFF實體,中文名稱,英文名稱,類型,狀態,工種,電話,備註\n";
+            data.forEach(s=>csv += `${s.entity},${s.name_cn},${s.name_en},${s.type},${s.status},${s.tags},${s.phone},${s.note}\n`);
+            const b = new Blob([csv], {type:'text/csv'});
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(b); a.download=`指定實體名單_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+            closeExportModal();
+        }
+
+        document.getElementById('global-search').oninput = renderSearch;
+        document.getElementById('manage-search').oninput = renderManageTable;
+        document.getElementById('filter-entity').onchange = renderManageTable;
+        document.getElementById('filter-status').onchange = renderManageTable;
+        document.getElementById('filter-type').onchange = renderManageTable; // 綁定新篩選器
     </script>
 </body>
 </html>
