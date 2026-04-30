@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>集團供應商管理系統 - 進階管理版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+        import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, query, orderBy, updateDoc, where, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+
+        // Firebase 配置 (請填入您的真實數值)
+        const firebaseConfig = {
+  apiKey: "AIzaSyCSiZp1Hi190zR-fzP_B8JoftTjFHC8dSs",
+  authDomain: "supplier-system-60c1b.firebaseapp.com",
+  databaseURL: "https://supplier-system-60c1b-default-rtdb.firebaseio.com",
+  projectId: "supplier-system-60c1b",
+  storageBucket: "supplier-system-60c1b.firebasestorage.app",
+  messagingSenderId: "101078681344",
+  appId: "1:101078681344:web:34933bff027e79d0f1d5e5",
+  measurementId: "G-D0P8QGW3X9"
+};
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // 掛載全域 API
+        window.api = { auth, db, signInWithEmailAndPassword, signOut, collection, addDoc, onSnapshot, doc, deleteDoc, query, orderBy, updateDoc, where, getDocs, writeBatch };
+
+        onAuthStateChanged(auth, (user) => {
+            const loginView = document.getElementById('login-view');
+            const mainView = document.getElementById('main-view');
+            if (user) {
+                loginView.classList.add('hidden');
+                mainView.classList.remove('hidden');
+                document.getElementById('user-email').innerText = user.email;
+                initApp();
+            } else {
+                loginView.classList.remove('hidden');
+                mainView.classList.add('hidden');
+            }
+        });
+    </script>
+</head>
+<body class="bg-gray-50 text-slate-900 font-sans">
+    <div id="app">
+        <!-- 登入界面 -->
+        <div id="login-view" class="min-h-screen flex items-center justify-center p-6">
+            <div class="bg-white p-10 rounded-[2rem] shadow-xl max-w-md w-full border border-gray-100">
+                <div class="text-center mb-8">
+                    <div class="bg-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center text-white mx-auto mb-4 shadow-lg shadow-blue-200">
+                        <i data-lucide="shield-check" class="w-8 h-8"></i>
+                    </div>
+                    <h1 class="text-2xl font-black">集團供應商管理系統</h1>
+                    <p class="text-gray-400 text-sm mt-1">請輸入管理員憑據登入</p>
+                </div>
+                <form id="login-form" class="space-y-4">
+                    <input type="email" id="email" placeholder="管理員 Email" required class="w-full px-5 py-4 rounded-xl bg-gray-50 border-none focus:ring-2 focus:ring-blue-500 outline-none">
+                    <input type="password" id="password" placeholder="密碼" required class="w-full px-5 py-4 rounded-xl bg-gray-50 border-none focus:ring-2 focus:ring-blue-500 outline-none">
+                    <button type="submit" id="login-btn" class="w-full bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100">登入系統</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- 主界面 -->
+        <div id="main-view" class="hidden min-h-screen flex flex-col">
+            <header class="bg-white border-b px-8 py-4 flex justify-between items-center sticky top-0 z-50">
+                <div class="flex items-center gap-4">
+                    <i data-lucide="database" class="w-6 h-6 text-blue-600"></i>
+                    <h2 class="font-black text-xl tracking-tight">集團數據管理中心</h2>
+                </div>
+                <div class="flex items-center gap-6">
+                    <div class="text-right hidden sm:block">
+                        <p id="user-email" class="text-xs font-bold text-gray-400"></p>
+                        <p class="text-[10px] text-green-500 font-bold uppercase tracking-widest">系統已連線</p>
+                    </div>
+                    <button onclick="handleLogout()" class="p-2 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-lg transition-colors">
+                        <i data-lucide="log-out" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </header>
+
+            <main class="flex-grow p-6 max-w-6xl mx-auto w-full space-y-6">
+                <!-- 頁籤導覽 -->
+                <div class="flex bg-white p-1 rounded-2xl shadow-sm border border-gray-100 w-fit">
+                    <button onclick="switchTab('query')" id="tab-query" class="px-6 py-2 rounded-xl font-bold text-sm transition-all bg-blue-600 text-white">查詢與管理</button>
+                    <button onclick="switchTab('entity')" id="tab-entity" class="px-6 py-2 rounded-xl font-bold text-sm transition-all text-gray-400 hover:text-gray-600">實體設定</button>
+                    <button onclick="exportConflictReport()" class="px-6 py-2 rounded-xl font-bold text-sm text-amber-600 hover:bg-amber-50 flex items-center gap-2 border-l ml-2">
+                        <i data-lucide="download" class="w-4 h-4"></i> 導出衝突報告
+                    </button>
+                </div>
+
+                <!-- 查詢與管理頁面 -->
+                <div id="view-query" class="space-y-6">
+                    <div class="bg-white p-8 rounded-[2rem] border border-gray-100 shadow-sm space-y-4">
+                        <h3 class="font-bold text-lg flex items-center gap-2"><i data-lucide="plus-circle" class="w-5 h-5 text-blue-600"></i> 新增供應商</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <input type="text" id="add-name-cn" placeholder="中文名稱" class="border bg-gray-50 p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
+                            <input type="text" id="add-name-en" placeholder="英文名稱" class="border bg-gray-50 p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
+                            <select id="add-entity" class="border bg-gray-50 p-3 rounded-xl outline-none"><option value="">選擇所屬實體...</option></select>
+                            <select id="add-type" class="border bg-gray-50 p-3 rounded-xl outline-none">
+                                <option value="供應商">供應商</option>
+                                <option value="承判商">承判商</option>
+                            </select>
+                            <select id="add-status" class="border bg-gray-50 p-3 rounded-xl outline-none">
+                                <option value="活躍">活躍</option>
+                                <option value="暫停">暫停</option>
+                                <option value="黑名單">黑名單</option>
+                            </select>
+                            <input type="text" id="add-note" placeholder="備註資訊" class="border bg-gray-50 p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none lg:col-span-1">
+                            <button onclick="addSupplier()" class="lg:col-span-3 bg-slate-900 text-white py-4 rounded-xl font-bold hover:bg-slate-800 transition-all active:scale-95">確認並存檔</button>
+                        </div>
+                    </div>
+
+                    <div id="supplier-list" class="grid grid-cols-1 gap-4">
+                        <!-- 資料動態加載 -->
+                    </div>
+                </div>
+
+                <!-- 實體設定頁面 -->
+                <div id="view-entity" class="hidden space-y-6">
+                    <div class="bg-white p-8 rounded-[2rem] border border-gray-100 shadow-sm space-y-4">
+                        <h3 class="font-bold text-lg">實體 (Entity) 管理</h3>
+                        <div class="flex gap-2">
+                            <input type="text" id="new-entity-name" placeholder="輸入新實體名稱 (如: 集團 A)" class="flex-grow border bg-gray-50 p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
+                            <button onclick="addEntity()" class="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-700 transition-all">新增實體</button>
+                        </div>
+                    </div>
+                    <div id="entity-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-gray-700">
+                        <!-- 實體列表 -->
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        // 核心邏輯
+        let currentTab = 'query';
+        const entities = [];
+        const suppliers = [];
+
+        async function initApp() {
+            // 監聽實體
+            window.api.onSnapshot(window.api.collection(window.api.db, "entities"), (snap) => {
+                entities.length = 0;
+                const list = document.getElementById('entity-list');
+                const select = document.getElementById('add-entity');
+                list.innerHTML = '';
+                select.innerHTML = '<option value="">選擇所屬實體...</option>';
+                
+                snap.forEach(d => {
+                    const data = d.data();
+                    entities.push({id: d.id, ...data});
+                    
+                    // 實體設定頁面列表 (含編輯按鈕)
+                    list.innerHTML += `
+                        <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex justify-between items-center group">
+                            <span class="font-bold text-lg">${data.name}</span>
+                            <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onclick="editEntity('${d.id}', '${data.name}')" class="text-blue-500 p-2 hover:bg-blue-50 rounded-lg"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                                <button onclick="deleteEntity('${d.id}')" class="text-red-300 hover:text-red-500 p-2"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                            </div>
+                        </div>
+                    `;
+                    select.innerHTML += `<option value="${data.name}">${data.name}</option>`;
+                });
+                lucide.createIcons();
+            });
+
+            // 監聽供應商
+            window.api.onSnapshot(window.api.query(window.api.collection(window.api.db, "suppliers"), window.api.orderBy("createdAt", "desc")), (snap) => {
+                suppliers.length = 0;
+                const list = document.getElementById('supplier-list');
+                list.innerHTML = snap.empty ? '<div class="text-center py-20 text-gray-300">目前沒有資料</div>' : '';
+                
+                snap.forEach(d => {
+                    const data = d.data();
+                    suppliers.push({id: d.id, ...data});
+                    
+                    // 狀態標籤顏色
+                    const statusColors = { '活躍': 'bg-green-100 text-green-700', '暫停': 'bg-amber-100 text-amber-700', '黑名單': 'bg-red-100 text-red-700' };
+                    const typeColors = { '供應商': 'bg-blue-50 text-blue-600', '承判商': 'bg-purple-50 text-purple-600' };
+
+                    list.innerHTML += `
+                        <div class="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div class="space-y-2">
+                                <div class="flex items-center gap-3">
+                                    <span class="font-black text-xl text-slate-800">${data.name_cn}</span>
+                                    <span class="text-xs font-bold px-2 py-1 rounded-md ${typeColors[data.type] || 'bg-gray-100'}">${data.type}</span>
+                                    <span class="text-xs font-bold px-2 py-1 rounded-md ${statusColors[data.status] || 'bg-gray-100'}">${data.status}</span>
+                                </div>
+                                <div class="text-sm text-gray-400 font-medium">${data.name_en || 'N/A'}</div>
+                                <div class="flex items-center gap-4 mt-2">
+                                    <span class="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-lg">屬實體: ${data.entity || '未設定'}</span>
+                                    <span class="text-xs text-gray-400 flex items-center gap-1"><i data-lucide="info" class="w-3 h-3"></i> 備註: ${data.note || '--'}</span>
+                                </div>
+                            </div>
+                            <div class="flex gap-2">
+                                <button onclick="deleteSupplier('${d.id}')" class="p-3 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"><i data-lucide="trash-2" class="w-5 h-5"></i></button>
+                            </div>
+                        </div>
+                    `;
+                });
+                lucide.createIcons();
+            });
+        }
+
+        // 功能函數
+        async function addSupplier() {
+            const cn = document.getElementById('add-name-cn').value;
+            const en = document.getElementById('add-name-en').value;
+            const ent = document.getElementById('add-entity').value;
+            const type = document.getElementById('add-type').value;
+            const status = document.getElementById('add-status').value;
+            const note = document.getElementById('add-note').value;
+
+            if(!cn || !ent) return alert("請填寫中文名稱與選擇實體");
+            
+            await window.api.addDoc(window.api.collection(window.api.db, "suppliers"), {
+                name_cn: cn, name_en: en, entity: ent, type, status, note, createdAt: Date.now()
+            });
+            document.getElementById('add-name-cn').value = '';
+            document.getElementById('add-name-en').value = '';
+            document.getElementById('add-note').value = '';
+        }
+
+        async function addEntity() {
+            const name = document.getElementById('new-entity-name').value;
+            if(!name) return;
+            await window.api.addDoc(window.api.collection(window.api.db, "entities"), { name });
+            document.getElementById('new-entity-name').value = '';
+        }
+
+        async function editEntity(id, oldName) {
+            const newName = prompt("修改實體名稱：", oldName);
+            if(!newName || newName === oldName) return;
+
+            try {
+                // 1. 修改實體自身
+                await window.api.updateDoc(window.api.doc(window.api.db, "entities", id), { name: newName });
+
+                // 2. 批量同步修改所有供應商的實體欄位
+                const q = window.api.query(window.api.collection(window.api.db, "suppliers"), window.api.where("entity", "==", oldName));
+                const querySnapshot = await window.api.getDocs(q);
+                const batch = window.api.writeBatch(window.api.db);
+                
+                querySnapshot.forEach((doc) => {
+                    batch.update(doc.ref, { entity: newName });
+                });
+                await batch.commit();
+                alert("修改成功，已同步更新關聯供應商");
+            } catch (e) { console.error(e); alert("修改失敗"); }
+        }
+
+        async function deleteSupplier(id) { if(confirm("確定刪除此供應商？")) await window.api.deleteDoc(window.api.doc(window.api.db, "suppliers", id)); }
+        async function deleteEntity(id) { if(confirm("確定刪除此實體？")) await window.api.deleteDoc(window.api.doc(window.api.db, "entities", id)); }
+
+        function switchTab(t) {
+            currentTab = t;
+            document.getElementById('view-query').classList.toggle('hidden', t !== 'query');
+            document.getElementById('view-entity').classList.toggle('hidden', t !== 'entity');
+            document.getElementById('tab-query').className = t === 'query' ? 'px-6 py-2 rounded-xl font-bold text-sm bg-blue-600 text-white' : 'px-6 py-2 rounded-xl font-bold text-sm text-gray-400';
+            document.getElementById('tab-entity').className = t === 'entity' ? 'px-6 py-2 rounded-xl font-bold text-sm bg-blue-600 text-white' : 'px-6 py-2 rounded-xl font-bold text-sm text-gray-400';
+        }
+
+        function exportConflictReport() {
+            // 模擬衝突掃描：名稱相同但實體不同的資料
+            const nameGroups = {};
+            suppliers.forEach(s => {
+                if(!nameGroups[s.name_cn]) nameGroups[s.name_cn] = [];
+                nameGroups[s.name_cn].push(s);
+            });
+
+            let csvContent = "data:text/csv;charset=utf-8,中文名稱,英文名稱,所屬實體,類型,狀態,備註\n";
+            let hasConflict = false;
+
+            Object.values(nameGroups).forEach(group => {
+                if(group.length > 1) {
+                    hasConflict = true;
+                    group.forEach(s => {
+                        csvContent += `${s.name_cn},${s.name_en},${s.entity},${s.type},${s.status},${s.note}\n`;
+                    });
+                }
+            });
+
+            if(!hasConflict) return alert("目前沒有發現名稱重複的潛在衝突。");
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `conflict_report_${new Date().toLocaleDateString()}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        document.getElementById('login-form').onsubmit = async (e) => {
+            e.preventDefault();
+            try {
+                const mail = document.getElementById('email').value;
+                const pass = document.getElementById('password').value;
+                await window.api.signInWithEmailAndPassword(window.api.auth, mail, pass);
+            } catch (err) { alert("登入失敗: " + err.message); }
+        };
+
+        function handleLogout() { window.api.signOut(window.api.auth); }
+        lucide.createIcons();
+    </script>
+</body>
+</html>
