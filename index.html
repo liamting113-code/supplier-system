@@ -162,7 +162,7 @@
                     <div class="max-w-2xl mx-auto">
                         <div class="bg-white p-6 rounded-2xl border shadow-sm">
                             <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i data-lucide="settings" class="text-slate-600"></i> 集團實體管理</h2>
-                            <p class="text-sm text-slate-500 mb-6">您可以在此新增或刪除子公司名稱，設定將自動同步到導入與篩選功能中。</p>
+                            <p class="text-sm text-slate-500 mb-6">您可以在此新增、修改或刪除子公司名稱，設定將自動同步到導入與篩選功能中。</p>
                             <div class="flex gap-2 mb-6">
                                 <input type="text" id="new-entity-name" placeholder="輸入新實體名稱 (如: 子公司 PP)" class="flex-grow border px-4 py-2 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
                                 <button onclick="handleAddEntity()" class="bg-slate-900 text-white px-6 py-2 rounded-lg font-bold hover:bg-slate-800 transition">新增實體</button>
@@ -283,7 +283,10 @@
                     list.innerHTML += `
                         <div class="flex justify-between items-center p-3 bg-slate-50 rounded-lg border">
                             <span class="font-bold text-slate-700">${e}</span>
-                            <button onclick="removeEntity(${idx})" class="text-slate-300 hover:text-red-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                            <div class="flex gap-2">
+                                <button onclick="editEntity(${idx})" class="text-slate-300 hover:text-blue-500"><i data-lucide="edit-2" class="w-4 h-4"></i></button>
+                                <button onclick="removeEntity(${idx})" class="text-slate-300 hover:text-red-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                            </div>
                         </div>
                     `;
                 });
@@ -300,6 +303,26 @@
             saveEntities();
             input.value = '';
             updateEntityUIs();
+        }
+
+        function editEntity(idx) {
+            const oldName = entityList[idx];
+            const newName = prompt("修改實體名稱：", oldName);
+            if (newName && newName.trim() !== "" && newName !== oldName) {
+                const trimmedNewName = newName.trim();
+                if (entityList.includes(trimmedNewName)) return alert("實體名稱已存在");
+                
+                // 同步更新供應商名單中的實體名稱
+                supplierData.forEach(s => {
+                    if (s.entity === oldName) s.entity = trimmedNewName;
+                });
+                
+                entityList[idx] = trimmedNewName;
+                saveEntities();
+                saveToStorage();
+                updateEntityUIs();
+                renderAll();
+            }
         }
 
         function removeEntity(idx) {
@@ -324,6 +347,17 @@
             renderManageTable();
         }
 
+        function getStatusStyle(status) {
+            if (status === "黑名單") return "text-red-600 bg-red-50 border-red-200";
+            if (status === "暫停") return "text-amber-600 bg-amber-50 border-amber-200";
+            return "text-green-600 bg-green-50 border-green-200";
+        }
+
+        function getTypeStyle(type) {
+            if (type === "承判商") return "text-blue-600 bg-blue-50 border-blue-200";
+            return "text-slate-600 bg-slate-50 border-slate-200";
+        }
+
         // --- 核心渲染與篩選 ---
         function renderManageTable() {
             const tbody = document.getElementById('manage-table-body');
@@ -340,18 +374,20 @@
 
             tbody.innerHTML = '';
             filtered.slice().reverse().forEach(s => {
-                const statusColor = s.status === "黑名單" ? "text-red-600 bg-red-50" : (s.status === "暫停" ? "text-amber-600 bg-amber-50" : "text-green-600 bg-green-50");
+                const statusStyle = getStatusStyle(s.status);
+                const typeStyle = getTypeStyle(s.type);
+                
                 tbody.innerHTML += `
                     <tr class="border-b hover:bg-slate-50 transition">
                         <td class="p-4">
-                            <div class="text-[10px] font-bold text-blue-500 uppercase">${s.entity}</div>
-                            <div class="font-bold">${s.name_cn || '-'}</div>
+                            <div class="text-[12px] font-bold text-blue-500 uppercase leading-none mb-1.5">${s.entity}</div>
+                            <div class="font-bold text-base">${s.name_cn || '-'}</div>
                             <div class="text-xs text-slate-400">${s.name_en || '-'}</div>
                         </td>
                         <td class="p-4">
-                            <div class="flex flex-col gap-1">
-                                <span class="px-2 py-0.5 rounded text-[10px] font-bold w-fit ${statusColor}">${s.status || '活躍'}</span>
-                                <span class="text-[10px] text-slate-500">${s.type}</span>
+                            <div class="flex flex-col gap-1.5">
+                                <span class="px-2 py-0.5 rounded-full border text-[10px] font-bold w-fit ${statusStyle}">${s.status || '活躍'}</span>
+                                <span class="px-2 py-0.5 rounded-full border text-[10px] font-bold w-fit ${typeStyle}">${s.type}</span>
                             </div>
                         </td>
                         <td class="p-4 text-xs text-slate-400 max-w-[150px] truncate">${s.tags || '-'}</td>
@@ -367,7 +403,8 @@
 
         // 監聽篩選器變化
         ['manage-search', 'filter-entity', 'filter-status'].forEach(id => {
-            document.getElementById(id).oninput = renderManageTable;
+            const el = document.getElementById(id);
+            if (el) el.oninput = renderManageTable;
         });
 
         // --- 功能模組 ---
@@ -455,15 +492,25 @@
             const query = document.getElementById('global-search').value.toLowerCase();
             container.innerHTML = '';
             supplierData.filter(s => (s.name_cn || "").toLowerCase().includes(query) || (s.name_en || "").toLowerCase().includes(query)).forEach(s => {
+                const statusStyle = getStatusStyle(s.status);
+                const typeStyle = getTypeStyle(s.type);
+                
                 container.innerHTML += `
-                    <div class="bg-white p-4 rounded-xl border shadow-sm">
-                        <div class="flex justify-between items-start mb-2">
-                            <span class="text-[10px] font-bold text-blue-600">${s.entity}</span>
-                            <span class="text-[10px] font-bold px-2 py-0.5 bg-slate-100 rounded">${s.status}</span>
+                    <div class="bg-white p-5 rounded-xl border shadow-sm">
+                        <div class="flex justify-between items-start mb-3">
+                            <span class="text-[10px] font-bold text-blue-600 uppercase">${s.entity}</span>
+                            <div class="flex gap-1">
+                                <span class="px-2 py-0.5 rounded-full border text-[9px] font-bold ${statusStyle}">${s.status}</span>
+                                <span class="px-2 py-0.5 rounded-full border text-[9px] font-bold ${typeStyle}">${s.type}</span>
+                            </div>
                         </div>
-                        <h4 class="font-bold">${s.name_cn || s.name_en}</h4>
-                        <p class="text-xs text-slate-400 mb-2">${s.tags || '一般'}</p>
-                        <p class="text-[10px] text-slate-400 border-t pt-2 truncate">${s.note || ''}</p>
+                        <h4 class="font-bold text-slate-800">${s.name_cn || '-'}</h4>
+                        <div class="text-xs text-slate-400 font-medium mb-2">${s.name_en || '-'}</div>
+                        <p class="text-[11px] text-slate-500 mb-3">${s.tags || '一般工種'}</p>
+                        <div class="border-t pt-3">
+                            <div class="text-[10px] text-slate-400 font-bold uppercase mb-1">備註資料</div>
+                            <p class="text-[11px] text-slate-400 italic">${s.note || '暫無備註'}</p>
+                        </div>
                     </div>
                 `;
             });
@@ -486,6 +533,7 @@
                         name_cn: row["中文名稱"] || "", name_en: row["英文名稱"] || "",
                         type: row["類型"] || "供應商", status: row["狀態"] || "活躍",
                         tags: row["工種"] || "", phone: row["聯絡電話"] || "",
+                        note: row["備註"] || "",
                         entity: entity, timestamp: Date.now()
                     });
                 });
@@ -519,8 +567,8 @@
         function executeExport() {
             const selected = Array.from(document.querySelectorAll('.exp-cb:checked')).map(c => c.value);
             const data = supplierData.filter(s => selected.includes(s.entity));
-            let csv = "\uFEFF實體,中文名稱,英文名稱,類型,狀態,工種,電話\n";
-            data.forEach(s => csv += `${s.entity},${s.name_cn},${s.name_en},${s.type},${s.status},${s.tags},${s.phone}\n`);
+            let csv = "\uFEFF實體,中文名稱,英文名稱,類型,狀態,工種,電話,備註\n";
+            data.forEach(s => csv += `${s.entity},${s.name_cn},${s.name_en},${s.type},${s.status},${s.tags},${s.phone},${s.note}\n`);
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement("a");
             link.href = URL.createObjectURL(blob);
@@ -529,26 +577,70 @@
             closeExportModal();
         }
 
-        function renderConflicts() {
-            const container = document.getElementById('conflict-list');
-            container.innerHTML = '';
+        function getConflictData() {
             const normalized = (s) => (s || "").toLowerCase().replace(/\s+/g, '').replace(/(limited|ltd|co|有限公司|公司)/g, "");
-            let count = 0;
+            const conflicts = [];
             for(let i=0; i<supplierData.length; i++) {
                 for(let j=i+1; j<supplierData.length; j++) {
                     const a = supplierData[i], b = supplierData[j];
-                    if(a.entity !== b.entity && (normalized(a.name_cn) === normalized(b.name_cn) || normalized(a.name_en) === normalized(b.name_en))) {
-                        count++;
-                        container.innerHTML += `<div class="bg-white border-l-4 border-red-500 p-4 rounded-xl flex justify-between items-center shadow-sm">
-                            <div><span class="text-[10px] text-slate-400 font-bold">${a.entity}</span><div class="font-bold">${a.name_cn || a.name_en}</div></div>
-                            <i data-lucide="arrow-right-left" class="text-red-300"></i>
-                            <div class="text-right"><span class="text-[10px] text-slate-400 font-bold">${b.entity}</span><div class="font-bold">${b.name_cn || b.name_en}</div></div>
-                        </div>`;
+                    if(a.entity !== b.entity && (normalized(a.name_cn) === normalized(b.name_cn) || (a.name_en && b.name_en && normalized(a.name_en) === normalized(b.name_en)))) {
+                        conflicts.push({ a, b });
                     }
                 }
             }
-            if(!count) container.innerHTML = '<p class="text-center py-10 text-slate-400 border-2 border-dashed rounded-xl">目前未發現跨實體衝突</p>';
+            return conflicts;
+        }
+
+        function renderConflicts() {
+            const container = document.getElementById('conflict-list');
+            container.innerHTML = '';
+            const conflicts = getConflictData();
+            
+            if(conflicts.length > 0) {
+                conflicts.forEach(pair => {
+                    const { a, b } = pair;
+                    container.innerHTML += `
+                        <div class="bg-white border-l-4 border-red-500 p-4 rounded-xl flex justify-between items-center shadow-sm">
+                            <div class="w-2/5">
+                                <span class="text-[10px] text-slate-400 font-bold uppercase leading-none">${a.entity}</span>
+                                <div class="font-bold text-sm truncate">${a.name_cn || a.name_en}</div>
+                                <div class="text-[10px] text-slate-400">${a.status} / ${a.type}</div>
+                            </div>
+                            <div class="flex flex-col items-center">
+                                <i data-lucide="arrow-right-left" class="text-red-300 w-5 h-5 mb-1"></i>
+                                <span class="text-[9px] font-bold text-red-500 uppercase">衝突</span>
+                            </div>
+                            <div class="w-2/5 text-right">
+                                <span class="text-[10px] text-slate-400 font-bold uppercase leading-none">${b.entity}</span>
+                                <div class="font-bold text-sm truncate">${b.name_cn || b.name_en}</div>
+                                <div class="text-[10px] text-slate-400">${b.status} / ${b.type}</div>
+                            </div>
+                        </div>`;
+                });
+            } else {
+                container.innerHTML = '<p class="text-center py-10 text-slate-400 border-2 border-dashed rounded-xl">目前未發現跨實體衝突</p>';
+            }
             lucide.createIcons();
+        }
+
+        function exportConflictReport() {
+            const conflicts = getConflictData();
+            if (conflicts.length === 0) {
+                alert("目前沒有發現任何衝突資料，無需導出。");
+                return;
+            }
+
+            let csv = "\uFEFF實體 A,公司名稱 A,狀態 A,類型 A,實體 B,公司名稱 B,狀態 B,類型 B\n";
+            conflicts.forEach(pair => {
+                const { a, b } = pair;
+                csv += `${a.entity},${a.name_cn || a.name_en},${a.status},${a.type},${b.entity},${b.name_cn || b.name_en},${b.status},${b.type}\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = `跨實體衝突報告_${new Date().toISOString().slice(0,10)}.csv`;
+            link.click();
         }
     </script>
 </body>
