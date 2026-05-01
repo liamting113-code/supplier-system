@@ -152,9 +152,9 @@
                                         <option value="供應商">供應商</option>
                                         <option value="承判商">承判商</option>
                                     </select>
-                                    <button onclick="openExportModal()" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 hover:bg-green-700 sm:col-span-1">
-                                        <i data-lucide="download-cloud" class="w-4 h-4"></i> 導出
-                                    </button>
+                                  <button onclick="executeDirectExport()" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 hover:bg-green-700 sm:col-span-1">
+    <i data-lucide="download-cloud" class="w-4 h-4"></i> 導出結果
+</button>
                                 </div>
                             </div>
                             <div class="bg-white border rounded-xl shadow-sm flex flex-col">
@@ -823,30 +823,48 @@
             a.href = URL.createObjectURL(b); a.download=`跨實體衝突報告_${new Date().toISOString().slice(0,10)}.csv`; a.click();
         }
 
-        function openExportModal() {
-            const c = document.getElementById('export-entities-container');
-            c.innerHTML = `
-                <label class="flex items-center gap-2 p-3 hover:bg-blue-50 rounded-lg cursor-pointer border-b border-slate-200 mb-2 transition">
-                    <input type="checkbox" id="export-all" onchange="document.querySelectorAll('.exp-cb').forEach(c=>c.checked=this.checked)" class="w-4 h-4 text-blue-600 rounded"> 
-                    <span class="text-sm font-bold text-blue-800">全選 / 取消全選</span>
-                </label>
-            `;
-            entityList.forEach(e => c.innerHTML += `<label class="flex items-center gap-2 p-2 hover:bg-slate-100 rounded cursor-pointer transition"><input type="checkbox" value="${e}" class="exp-cb w-4 h-4 rounded text-blue-600"> <span class="text-sm font-medium text-slate-700">${e}</span></label>`);
-            document.getElementById('export-modal').classList.remove('hidden');
-        }
-        function closeExportModal() { document.getElementById('export-modal').classList.add('hidden'); }
-        function executeExport() {
-            const sel = Array.from(document.querySelectorAll('.exp-cb:checked')).map(x=>x.value);
-            if (sel.length === 0) return alert("請至少選擇一個實體！");
-            
-            const data = supplierData.filter(s=>sel.includes(s.entity));
-            let csv = "\uFEFF實體,中文名稱,英文名稱,類型,狀態,工種,電話,備註\n";
-            data.forEach(s=>csv += `${s.entity},${s.name_cn},${s.name_en},${s.type},${s.status},${s.tags},${s.phone},${s.note}\n`);
-            const b = new Blob([csv], {type:'text/csv'});
-            const a = document.createElement("a");
-            a.href = URL.createObjectURL(b); a.download=`指定實體名單_${new Date().toISOString().slice(0,10)}.csv`; a.click();
-            closeExportModal();
-        }
+        // 新的導出邏輯：直接抓取當前篩選結果並生成 XLSX 防止錯位
+window.executeDirectExport = function() {
+    // 1. 獲取目前管理頁面的篩選條件
+    const q = document.getElementById('manage-search').value.toLowerCase();
+    const fE = document.getElementById('filter-entity').value;
+    const fS = document.getElementById('filter-status').value;
+    const fT = document.getElementById('filter-type').value;
+
+    // 2. 過濾數據 (與表格顯示的邏輯一致)
+    const filtered = supplierData.filter(s => {
+        const mk = (s.name_cn||"").toLowerCase().includes(q) || 
+                   (s.name_en||"").toLowerCase().includes(q) || 
+                   (s.tags||"").toLowerCase().includes(q);
+        return mk && (fE === "" || s.entity === fE) && 
+               (fS === "" || s.status === fS) && 
+               (fT === "" || s.type === fT);
+    });
+
+    if (filtered.length === 0) return alert("目前沒有符合條件的資料可供導出");
+
+    // 3. 整理成 Excel 格式 (確保「工種」和「備註」在單一單元格內，解決錯位)
+    const worksheetData = filtered.map(s => ({
+        "所屬實體": s.entity,
+        "中文名稱": s.name_cn || "",
+        "英文名稱": s.name_en || "",
+        "類型": s.type,
+        "狀態": s.status,
+        "工種": s.tags || "", // XLSX 套件會自動處理內容中的逗號，不會造成跳格
+        "電話": s.phone || "",
+        "備註": s.note || ""
+    }));
+
+    // 4. 使用 SheetJS (index2.html 已載入) 產生檔案
+    const ws = XLSX.utils.json_to_sheet(worksheetData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "供應商清單");
+
+    // 5. 下載檔案
+    const dateStr = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `集團供應商管理導出_${dateStr}.xlsx`);
+};
+        
 
         // 監聽器 (修改過濾條件時將頁碼重置回第一頁)
         document.getElementById('global-search').oninput = renderSearch;
