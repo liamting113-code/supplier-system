@@ -147,7 +147,6 @@
                                         <option value="暫停">暫停</option>
                                         <option value="黑名單">黑名單</option>
                                     </select>
-                                    <!-- 新增：類型篩選 -->
                                     <select id="filter-type" class="border p-2 rounded-lg text-sm outline-none sm:col-span-1">
                                         <option value="">所有類型</option>
                                         <option value="供應商">供應商</option>
@@ -158,18 +157,22 @@
                                     </button>
                                 </div>
                             </div>
-                            <div class="bg-white border rounded-xl overflow-hidden shadow-sm overflow-x-auto">
-                                <table class="w-full text-left">
-                                    <thead class="bg-slate-50 border-b">
-                                        <tr class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                                            <th class="p-4">實體 / 名稱</th>
-                                            <th class="p-4">狀態/類型</th>
-                                            <th class="p-4">工種</th>
-                                            <th class="p-4 text-right">操作</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="manage-table-body" class="text-sm"></tbody>
-                                </table>
+                            <div class="bg-white border rounded-xl shadow-sm flex flex-col">
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left">
+                                        <thead class="bg-slate-50 border-b">
+                                            <tr class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                                                <th class="p-4">實體 / 名稱</th>
+                                                <th class="p-4">狀態/類型</th>
+                                                <th class="p-4">工種</th>
+                                                <th class="p-4 text-right">操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="manage-table-body" class="text-sm"></tbody>
+                                    </table>
+                                </div>
+                                <!-- 管理頁面分頁容器 -->
+                                <div id="manage-pagination" class="flex justify-between items-center p-4 bg-white border-t rounded-b-xl"></div>
                             </div>
                         </div>
                     </div>
@@ -180,7 +183,7 @@
                     <div class="max-w-2xl mx-auto">
                         <div class="bg-white p-6 rounded-2xl border shadow-sm">
                             <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i data-lucide="settings" class="text-slate-600"></i> 集團實體管理</h2>
-                            <p class="text-sm text-slate-500 mb-6">您可以在此新增、修改或刪除子公司名稱。所有修改都會即時同步到雲端資料庫。</p>
+                            <p class="text-sm text-slate-500 mb-6">您可以在此新增、修改或刪除實體名稱，並<strong class="text-blue-600">設定一間作為母公司</strong>（跨實體查核預設基準）。所有修改都會即時同步。</p>
                             <div class="flex gap-2 mb-6">
                                 <input type="text" id="new-entity-name" placeholder="輸入新實體名稱" class="flex-grow border px-4 py-2 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
                                 <button onclick="handleAddEntity()" class="bg-slate-900 text-white px-6 py-2 rounded-lg font-bold hover:bg-slate-800 transition">新增</button>
@@ -194,16 +197,27 @@
                 <div id="tab-conflicts" class="tab-content hidden">
                     <div class="flex justify-between items-center mb-6">
                         <h2 class="text-xl font-bold flex items-center gap-2 text-red-600"><i data-lucide="alert-triangle"></i> 跨實體衝突掃描</h2>
-                        <button onclick="exportConflictReport()" class="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-red-700">
+                        <button onclick="exportConflictReport()" class="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-red-700 transition">
                             <i data-lucide="download" class="w-4 h-4"></i> 導出衝突報告
                         </button>
                     </div>
+                    
+                    <!-- 衝突過濾器 UI -->
+                    <div class="bg-white p-4 rounded-xl border shadow-sm mb-6 flex gap-4 items-center flex-wrap sm:flex-nowrap">
+                        <div class="font-bold text-slate-700 text-sm whitespace-nowrap"><i data-lucide="filter" class="w-4 h-4 inline mr-1"></i> 實體比對範圍：</div>
+                        <select id="conflict-filter-a" class="border p-2 rounded-lg text-sm outline-none flex-grow sm:w-1/3 bg-blue-50 font-medium"></select>
+                        <i data-lucide="arrow-right-left" class="text-slate-400 w-5 h-5 mx-2 hidden sm:block"></i>
+                        <span class="sm:hidden font-bold text-slate-400">VS</span>
+                        <select id="conflict-filter-b" class="border p-2 rounded-lg text-sm outline-none flex-grow sm:w-1/3"></select>
+                        <button onclick="renderConflicts()" class="bg-slate-800 text-white px-6 py-2 rounded-lg text-sm font-bold hover:bg-slate-900 transition">掃描查詢</button>
+                    </div>
+
                     <div id="conflict-list" class="space-y-4"></div>
                 </div>
             </div>
         </div>
 
-        <!-- 編輯 Modal (已加上欄位名稱) -->
+        <!-- 編輯 Modal -->
         <div id="edit-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <div class="bg-white p-6 rounded-xl w-full max-w-md shadow-xl">
                 <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><i data-lucide="edit-3" class="text-blue-600"></i> 修改資料</h3>
@@ -271,6 +285,11 @@
         let supplierData = [];
         let entityList = [];
         let entityDocs = {}; // Mapping of entity Name -> Document ID
+        let parentEntityName = ""; // 母公司記錄
+        
+        // 分頁變數
+        let currentPage = 1;
+        const itemsPerPage = 10;
         
         lucide.createIcons();
 
@@ -286,7 +305,6 @@
             document.getElementById('login-error').classList.add('hidden');
             
             try {
-                // 使用真實的 Firebase Auth 登入
                 await window.firebaseCtx.signInWithEmailAndPassword(window.firebaseCtx.auth, email, password);
             } catch (err) {
                 document.getElementById('login-error').innerText = "登入失敗：" + err.message;
@@ -300,7 +318,7 @@
             window.firebaseCtx.signOut(window.firebaseCtx.auth);
         }
 
-        // 初始化資料同步 (雲端版)
+        // 初始化資料同步
         window.initApp = function() {
             const { db, collection, onSnapshot, query, orderBy } = window.firebaseCtx;
 
@@ -308,20 +326,33 @@
             onSnapshot(collection(db, "entities"), (snap) => {
                 entityList = [];
                 entityDocs = {};
+                parentEntityName = "";
+                let hasParent = false;
+                
                 snap.forEach(d => {
                     const data = d.data();
                     entityList.push(data.name);
-                    entityDocs[data.name] = d.id; // 記錄 ID 以便修改/刪除
+                    entityDocs[data.name] = d.id;
+                    if (data.isParent) {
+                        parentEntityName = data.name;
+                        hasParent = true;
+                    }
                 });
                 
-                // 如果是全新專案，自動建立預設實體
+                // 自動建立預設實體
                 if(entityList.length === 0) {
                     const defaultEntities = ['母公司', '子公司 01'];
-                    defaultEntities.forEach(async name => {
-                        await window.firebaseCtx.addDoc(collection(db, "entities"), { name });
+                    defaultEntities.forEach(async (name, index) => {
+                        await window.firebaseCtx.addDoc(collection(db, "entities"), { 
+                            name: name,
+                            isParent: index === 0 // 第一個自動做母公司
+                        });
                     });
                 } else {
                     entityList.sort(); // 字母排序
+                    if (!hasParent && entityList.length > 0) {
+                        parentEntityName = entityList[0]; // 如果無人係母公司，暫時預設第一個
+                    }
                     updateEntityUIs();
                 }
             });
@@ -341,7 +372,7 @@
             document.getElementById('loading').classList.toggle('hidden', !show);
         }
 
-        // --- 實體管理 (Firestore 雲端版) ---
+        // --- 實體管理 ---
         function updateEntityUIs() {
             const ids = ['import-entity', 'filter-entity'];
             ids.forEach(id => {
@@ -350,36 +381,84 @@
                 const cur = el.value;
                 el.innerHTML = id === 'filter-entity' ? '<option value="">所有實體</option>' : '';
                 entityList.forEach(e => el.innerHTML += `<option value="${e}">${e}</option>`);
-                // 保留當前選擇，若無則預設第一個
                 if(cur && entityList.includes(cur)) el.value = cur;
                 else if (id === 'import-entity' && entityList.length > 0) el.value = entityList[0];
             });
 
+            // 更新實體列表 UI (包含母公司 Radio 按鈕)
             const list = document.getElementById('entities-list');
             if (list) {
                 list.innerHTML = '';
                 entityList.forEach((e) => {
+                    const isParent = e === parentEntityName;
                     list.innerHTML += `
                         <div class="flex justify-between items-center p-3 bg-slate-50 hover:bg-white rounded-lg border transition">
-                            <span class="font-bold text-slate-700">${e}</span>
+                            <label class="flex items-center gap-3 cursor-pointer">
+                                <input type="radio" name="parentEntity" value="${e}" class="w-4 h-4 text-blue-600 focus:ring-blue-500 cursor-pointer" 
+                                    ${isParent ? 'checked' : ''} onchange="setParentEntity('${e}')">
+                                <span class="font-bold text-slate-700 ${isParent ? 'text-blue-600' : ''}">
+                                    ${e} ${isParent ? '<span class="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded ml-2">母公司</span>' : ''}
+                                </span>
+                            </label>
                             <div class="flex gap-2">
-                                <button onclick="editEntity('${e}')" class="text-slate-300 hover:text-blue-500"><i data-lucide="edit-2" class="w-4 h-4"></i></button>
-                                <button onclick="removeEntity('${e}')" class="text-slate-300 hover:text-red-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                <button onclick="editEntity('${e}')" class="text-slate-300 hover:text-blue-500" title="修改名稱"><i data-lucide="edit-2" class="w-4 h-4"></i></button>
+                                <button onclick="removeEntity('${e}')" class="text-slate-300 hover:text-red-500" title="刪除實體"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                             </div>
                         </div>
                     `;
                 });
-                lucide.createIcons();
             }
+
+            // 更新衝突頁面過濾器
+            const ca = document.getElementById('conflict-filter-a');
+            const cb = document.getElementById('conflict-filter-b');
+            if (ca && cb) {
+                const valA = ca.value;
+                const valB = cb.value;
+                ca.innerHTML = '';
+                cb.innerHTML = '<option value="">所有其他子公司 (預設)</option>';
+                entityList.forEach(e => {
+                    const label = e === parentEntityName ? `${e} (母公司)` : e;
+                    ca.innerHTML += `<option value="${e}">${label}</option>`;
+                    cb.innerHTML += `<option value="${e}">${label}</option>`;
+                });
+                // Filter A 預設維持原本選擇，或自動綁定母公司
+                ca.value = valA && entityList.includes(valA) ? valA : parentEntityName;
+                if (valB && entityList.includes(valB)) cb.value = valB;
+            }
+
+            lucide.createIcons();
+        }
+
+        // 設定母公司
+        async function setParentEntity(name) {
+            toggleLoading(true);
+            try {
+                const { db, doc, writeBatch } = window.firebaseCtx;
+                const batch = writeBatch(db);
+                
+                for (let e of entityList) {
+                    const eId = entityDocs[e];
+                    if (eId) {
+                        batch.update(doc(db, "entities", eId), { isParent: e === name });
+                    }
+                }
+                await batch.commit();
+            } catch (e) {
+                alert("設定母公司失敗");
+            }
+            toggleLoading(false);
         }
 
         async function handleAddEntity() {
             const val = document.getElementById('new-entity-name').value.trim();
             if (!val || entityList.includes(val)) return;
-            
             toggleLoading(true);
             try {
-                await window.firebaseCtx.addDoc(window.firebaseCtx.collection(window.firebaseCtx.db, "entities"), { name: val });
+                await window.firebaseCtx.addDoc(window.firebaseCtx.collection(window.firebaseCtx.db, "entities"), { 
+                    name: val,
+                    isParent: false 
+                });
                 document.getElementById('new-entity-name').value = '';
             } catch(e) { alert("新增失敗"); }
             toggleLoading(false);
@@ -395,13 +474,11 @@
                 try {
                     const { db, doc, updateDoc, collection, query, where, getDocs, writeBatch } = window.firebaseCtx;
                     
-                    // 1. 更新實體庫
                     const entityId = entityDocs[oldName];
                     if (entityId) {
                         await updateDoc(doc(db, "entities", entityId), { name: trimmedNewName });
                     }
                     
-                    // 2. 批量更新關聯的供應商
                     const q = query(collection(db, "suppliers"), where("entity", "==", oldName));
                     const querySnapshot = await getDocs(q);
                     const batch = writeBatch(db);
@@ -410,17 +487,13 @@
                         batch.update(d.ref, { entity: trimmedNewName });
                     });
                     await batch.commit();
-                    alert("修改成功，已自動同步所有關聯的供應商。");
-                } catch (e) {
-                    alert("修改失敗: " + e.message);
-                }
+                } catch (e) { alert("修改失敗: " + e.message); }
                 toggleLoading(false);
             }
         }
 
         async function removeEntity(name) {
             if (!confirm(`確定刪除實體「${name}」？\n注意：這不會刪除原本屬於該實體的供應商，但會影響他們的分類。`)) return;
-            
             const entityId = entityDocs[name];
             if (entityId) {
                 toggleLoading(true);
@@ -445,44 +518,78 @@
             const q = document.getElementById('manage-search').value.toLowerCase();
             const fE = document.getElementById('filter-entity').value;
             const fS = document.getElementById('filter-status').value;
-            const fT = document.getElementById('filter-type').value; // 新增：類型過濾
+            const fT = document.getElementById('filter-type').value;
 
+            // 1. 先執行資料過濾
             const filtered = supplierData.filter(s => {
                 const mk = (s.name_cn||"").toLowerCase().includes(q) || (s.name_en||"").toLowerCase().includes(q) || (s.tags||"").toLowerCase().includes(q);
                 return mk && (fE === "" || s.entity === fE) && (fS === "" || s.status === fS) && (fT === "" || s.type === fT);
             });
 
+            // 2. 分頁計算
+            const totalPages = Math.ceil(filtered.length / itemsPerPage) || 1;
+            if (currentPage > totalPages) currentPage = totalPages;
+            if (currentPage < 1) currentPage = 1;
+
+            const startIdx = (currentPage - 1) * itemsPerPage;
+            const paginated = filtered.slice(startIdx, startIdx + itemsPerPage);
+
+            // 3. 渲染表格內容
             tbody.innerHTML = '';
-            filtered.forEach(s => {
-                tbody.innerHTML += `
-                    <tr class="border-b hover:bg-slate-50 transition">
-                        <td class="p-4">
-                            <div class="text-[12px] font-bold text-blue-500 mb-1 uppercase tracking-widest">${s.entity}</div>
-                            <div class="font-bold text-base text-slate-800">${s.name_cn || '-'}</div>
-                            <div class="text-xs text-slate-400 font-medium">${s.name_en || '-'}</div>
-                            <div class="text-xs text-slate-400 mt-1" style="display: ${s.phone ? 'block' : 'none'}"><i class="fas fa-phone mr-1"></i>${s.phone || '-'}</div>
-                        </td>
-                        <td class="p-4">
-                            <div class="flex flex-col gap-1.5 w-fit">
-                                <span class="px-2 py-0.5 rounded-md border text-[10px] font-bold ${getStatusStyle(s.status)}">${s.status}</span>
-                                <span class="px-2 py-0.5 rounded-md border text-[10px] font-bold ${getTypeStyle(s.type)}">${s.type}</span>
-                            </div>
-                        </td>
-                        <td class="p-4 text-xs text-slate-500 max-w-[150px] truncate leading-relaxed">${s.tags || '-'}</td>
-                        <td class="p-4 text-right whitespace-nowrap">
-                            <button onclick="openEditModal('${s.id}')" class="p-2 text-blue-400 hover:text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition mr-1"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
-                            <button onclick="deleteItem('${s.id}')" class="p-2 text-red-300 hover:text-red-500 bg-red-50 hover:bg-red-100 rounded-lg transition"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                        </td>
-                    </tr>
-                `;
-            });
+            if (paginated.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center p-8 text-slate-400">沒有符合的資料</td></tr>`;
+            } else {
+                paginated.forEach(s => {
+                    tbody.innerHTML += `
+                        <tr class="border-b hover:bg-slate-50 transition">
+                            <td class="p-4">
+                                <div class="text-[12px] font-bold text-blue-500 mb-1 uppercase tracking-widest">${s.entity}</div>
+                                <div class="font-bold text-base text-slate-800">${s.name_cn || '-'}</div>
+                                <div class="text-xs text-slate-400 font-medium">${s.name_en || '-'}</div>
+                                <div class="text-xs text-slate-400 mt-1" style="display: ${s.phone ? 'block' : 'none'}"><i class="fas fa-phone mr-1"></i>${s.phone || '-'}</div>
+                            </td>
+                            <td class="p-4">
+                                <div class="flex flex-col gap-1.5 w-fit">
+                                    <span class="px-2 py-0.5 rounded-md border text-[10px] font-bold ${getStatusStyle(s.status)}">${s.status}</span>
+                                    <span class="px-2 py-0.5 rounded-md border text-[10px] font-bold ${getTypeStyle(s.type)}">${s.type}</span>
+                                </div>
+                            </td>
+                            <td class="p-4 text-xs text-slate-500 max-w-[150px] truncate leading-relaxed">${s.tags || '-'}</td>
+                            <td class="p-4 text-right whitespace-nowrap">
+                                <button onclick="openEditModal('${s.id}')" class="p-2 text-blue-400 hover:text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition mr-1"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                                <button onclick="deleteItem('${s.id}')" class="p-2 text-red-300 hover:text-red-500 bg-red-50 hover:bg-red-100 rounded-lg transition"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+            
+            // 4. 渲染底部 Pagination 控制項
+            const paginationContainer = document.getElementById('manage-pagination');
+            paginationContainer.innerHTML = `
+                <div class="text-sm font-bold text-slate-500">共 ${filtered.length} 筆資料 <span class="font-normal">(第 ${currentPage} / ${totalPages} 頁)</span></div>
+                <div class="flex gap-2">
+                    <button onclick="changePage(-1)" class="px-3 py-1 border rounded text-sm font-bold transition hover:bg-slate-50 ${currentPage === 1 ? 'opacity-30 cursor-not-allowed' : 'text-slate-700'}" ${currentPage === 1 ? 'disabled' : ''}>上一頁</button>
+                    <button onclick="changePage(1)" class="px-3 py-1 border rounded text-sm font-bold transition hover:bg-slate-50 ${currentPage === totalPages ? 'opacity-30 cursor-not-allowed' : 'text-slate-700'}" ${currentPage === totalPages ? 'disabled' : ''}>下一頁</button>
+                </div>
+            `;
+            
             lucide.createIcons();
         }
 
+        // 切換頁碼
+        window.changePage = function(direction) {
+            currentPage += direction;
+            renderManageTable();
+        };
+
         function renderSearch() {
             const container = document.getElementById('search-results');
-            const query = document.getElementById('global-search').value.toLowerCase();
+            const query = document.getElementById('global-search').value.trim().toLowerCase();
             container.innerHTML = '';
+            
+            // 查詢框為空時，不顯示任何資料
+            if (query === "") return;
             
             supplierData.filter(s => (s.name_cn||"").toLowerCase().includes(query) || (s.name_en||"").toLowerCase().includes(query) || (s.tags||"").toLowerCase().includes(query)).forEach(s => {
                 container.innerHTML += `
@@ -507,6 +614,19 @@
             lucide.createIcons();
         }
 
+        // 下載標準範本 (.xlsx)
+        window.downloadTemplate = function() {
+            const ws_data = [
+                ["中文名稱", "英文名稱", "類型", "狀態", "工種", "聯絡電話", "備註"],
+                ["範例公司A", "Example Co A", "供應商", "活躍", "五金", "12345678", "這是示範資料"],
+                ["範例承判商B", "Example Sub B", "承判商", "暫停", "機電", "98765432", ""]
+            ];
+            const ws = XLSX.utils.aoa_to_sheet(ws_data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "供應商導入名單");
+            XLSX.writeFile(wb, "供應商與承判商_標準導入範本.xlsx");
+        }
+
         // --- 輔助功能 ---
         function switchTab(t) {
             document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
@@ -519,7 +639,6 @@
             if(t === 'entities') updateEntityUIs();
         }
 
-        // Firestore 寫入操作
         async function handleManualAdd() {
             const item = {
                 name_cn: document.getElementById('m-name-cn').value,
@@ -588,9 +707,7 @@
             try {
                 await window.firebaseCtx.updateDoc(window.firebaseCtx.doc(window.firebaseCtx.db, "suppliers", id), updatedData);
                 closeEditModal();
-            } catch (e) {
-                alert("更新失敗");
-            }
+            } catch (e) { alert("更新失敗"); }
             toggleLoading(false);
         }
 
@@ -627,20 +744,27 @@
                         count++;
                     }
                 }
-                document.getElementById('excel-file').value = ""; // 清空
+                document.getElementById('excel-file').value = "";
                 toggleLoading(false);
                 alert(`導入完成！已上傳 ${count} 筆資料到雲端。`);
             };
             reader.readAsArrayBuffer(file);
         });
 
-        // 衝突邏輯
+        // 衝突邏輯 (基於 Filter A 實體 及 Filter B 實體過濾)
         function getConflictPairs() {
             const norm = (s) => (s||"").toLowerCase().replace(/\s+/g,'').replace(/(limited|ltd|co|有限公司|公司)/g,"");
+            
+            // 讀取過濾條件。如果 Filter A 為空，預設使用母公司名稱
+            const filterA = document.getElementById('conflict-filter-a').value || parentEntityName;
+            const filterB = document.getElementById('conflict-filter-b').value; // 空值代表所有其他公司
+            
+            const groupA = supplierData.filter(s => s.entity === filterA);
+            const groupB = supplierData.filter(s => filterB ? s.entity === filterB : s.entity !== filterA);
+            
             const res = [];
-            for(let i=0; i<supplierData.length; i++) {
-                for(let j=i+1; j<supplierData.length; j++) {
-                    const a = supplierData[i], b = supplierData[j];
+            for(let a of groupA) {
+                for(let b of groupB) {
                     if(a.entity !== b.entity && (norm(a.name_cn) === norm(b.name_cn) || (a.name_en && b.name_en && norm(a.name_en) === norm(b.name_en)))) {
                         res.push({a, b});
                     }
@@ -649,25 +773,37 @@
             return res;
         }
 
-        function renderConflicts() {
+        window.renderConflicts = function() {
             const list = document.getElementById('conflict-list');
+            const filterA = document.getElementById('conflict-filter-a').value || parentEntityName;
+            const filterB = document.getElementById('conflict-filter-b').value || "所有其他子公司";
+            
+            if (!filterA) {
+                list.innerHTML = '<p class="text-center py-10 text-slate-400">系統未設定實體，無法查核。</p>';
+                return;
+            }
+
             const pairs = getConflictPairs();
-            list.innerHTML = pairs.length ? '' : '<p class="text-center py-10 text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">目前未發現跨實體名稱衝突</p>';
+            
+            list.innerHTML = pairs.length 
+                ? `<div class="text-sm font-bold text-slate-500 mb-4 px-2">掃描範圍： <span class="text-blue-600">${filterA}</span> VS <span class="text-blue-600">${filterB}</span> <span class="float-right bg-red-100 text-red-600 px-2 py-0.5 rounded-full text-xs">共發現 ${pairs.length} 項衝突</span></div>` 
+                : `<p class="text-center py-10 text-green-600 font-bold border-2 border-dashed border-green-200 bg-green-50 rounded-xl"><i data-lucide="check-circle" class="w-6 h-6 inline mr-2"></i>太棒了！指定的實體範圍內（${filterA} VS ${filterB}）目前未發現名稱衝突。</p>`;
+            
             pairs.forEach(p => {
                 list.innerHTML += `
                     <div class="bg-white border-l-4 border-red-500 p-5 rounded-2xl flex justify-between items-center shadow-sm">
                         <div class="w-5/12">
-                            <span class="text-[10px] text-slate-400 font-bold uppercase leading-none bg-slate-50 px-2 py-1 rounded">${p.a.entity}</span>
-                            <div class="font-bold text-base mt-2 truncate">${p.a.name_cn || p.a.name_en}</div>
+                            <span class="text-[10px] text-slate-400 font-bold uppercase leading-none bg-slate-50 px-2 py-1 rounded border">${p.a.entity}</span>
+                            <div class="font-bold text-base mt-2 truncate text-slate-800">${p.a.name_cn || p.a.name_en}</div>
                             <div class="text-[11px] text-slate-500 mt-1 font-medium"><span class="${p.a.status==='活躍'?'text-green-600':(p.a.status==='黑名單'?'text-red-600':'text-amber-600')}">${p.a.status}</span> / ${p.a.type} / <span class="text-blue-600">工種: ${p.a.tags || '無'}</span></div>
                         </div>
                         <div class="flex flex-col items-center">
                             <i data-lucide="arrow-right-left" class="text-red-300 w-5 h-5 mb-1"></i>
-                            <span class="text-[9px] font-bold text-red-500 uppercase tracking-widest bg-red-50 px-2 rounded">衝突</span>
+                            <span class="text-[9px] font-bold text-red-500 uppercase tracking-widest bg-red-50 px-2 rounded border border-red-100">衝突</span>
                         </div>
                         <div class="w-5/12 text-right">
-                            <span class="text-[10px] text-slate-400 font-bold uppercase leading-none bg-slate-50 px-2 py-1 rounded">${p.b.entity}</span>
-                            <div class="font-bold text-base mt-2 truncate">${p.b.name_cn || p.b.name_en}</div>
+                            <span class="text-[10px] text-slate-400 font-bold uppercase leading-none bg-slate-50 px-2 py-1 rounded border">${p.b.entity}</span>
+                            <div class="font-bold text-base mt-2 truncate text-slate-800">${p.b.name_cn || p.b.name_en}</div>
                             <div class="text-[11px] text-slate-500 mt-1 font-medium"><span class="${p.b.status==='活躍'?'text-green-600':(p.b.status==='黑名單'?'text-red-600':'text-amber-600')}">${p.b.status}</span> / ${p.b.type} / <span class="text-blue-600">工種: ${p.b.tags || '無'}</span></div>
                         </div>
                     </div>
@@ -676,10 +812,10 @@
             lucide.createIcons();
         }
 
-        function exportConflictReport() {
+        window.exportConflictReport = function() {
             const pairs = getConflictPairs();
-            if(!pairs.length) return alert("無衝突可導出");
-            // 新增: 工種 A, 工種 B
+            if(!pairs.length) return alert("指定範圍內目前無任何衝突可導出。");
+            
             let csv = "\uFEFF實體A,公司A,狀態A,類型A,工種A,實體B,公司B,狀態B,類型B,工種B\n";
             pairs.forEach(p => csv += `${p.a.entity},${p.a.name_cn || p.a.name_en},${p.a.status},${p.a.type},${p.a.tags || ''},${p.b.entity},${p.b.name_cn || p.b.name_en},${p.b.status},${p.b.type},${p.b.tags || ''}\n`);
             const b = new Blob([csv], {type:'text/csv'});
@@ -695,7 +831,7 @@
                     <span class="text-sm font-bold text-blue-800">全選 / 取消全選</span>
                 </label>
             `;
-            entityList.forEach(e => c.innerHTML += `<label class="flex items-center gap-2 p-2 hover:bg-slate-100 rounded cursor-pointer transition"><input type="checkbox" value="${e}" class="exp-cb w-4 h-4 rounded"> <span class="text-sm font-medium text-slate-700">${e}</span></label>`);
+            entityList.forEach(e => c.innerHTML += `<label class="flex items-center gap-2 p-2 hover:bg-slate-100 rounded cursor-pointer transition"><input type="checkbox" value="${e}" class="exp-cb w-4 h-4 rounded text-blue-600"> <span class="text-sm font-medium text-slate-700">${e}</span></label>`);
             document.getElementById('export-modal').classList.remove('hidden');
         }
         function closeExportModal() { document.getElementById('export-modal').classList.add('hidden'); }
@@ -712,11 +848,12 @@
             closeExportModal();
         }
 
+        // 監聽器 (修改過濾條件時將頁碼重置回第一頁)
         document.getElementById('global-search').oninput = renderSearch;
-        document.getElementById('manage-search').oninput = renderManageTable;
-        document.getElementById('filter-entity').onchange = renderManageTable;
-        document.getElementById('filter-status').onchange = renderManageTable;
-        document.getElementById('filter-type').onchange = renderManageTable; // 綁定新篩選器
+        document.getElementById('manage-search').oninput = () => { currentPage = 1; renderManageTable(); };
+        document.getElementById('filter-entity').onchange = () => { currentPage = 1; renderManageTable(); };
+        document.getElementById('filter-status').onchange = () => { currentPage = 1; renderManageTable(); };
+        document.getElementById('filter-type').onchange = () => { currentPage = 1; renderManageTable(); };
     </script>
 </body>
 </html>
